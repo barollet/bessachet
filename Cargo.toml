@@ -1,0 +1,7 @@
+[package]
+name = "bessachet"
+version = "0.1.0"
+authors = ["Theo Barollet <theo.barollet@ensimag.fr>"]
+
+[dependencies]
+array-init = "0.0.4"
