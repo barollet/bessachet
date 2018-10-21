@@ -1,4 +1,8 @@
+mod init_magic;
 
+use std::ptr;
+
+use self::init_magic::get_fixed_offset;
 
 // unsafe attack table for rooks, bishops and queens
 // this is a black magic fancy table with shared attacks
@@ -8,7 +12,8 @@
 // hence the mut keyword
 static mut ATTACK_TABLE: [u64; 46909] = [0; 46909];
 
-#[derive(Copy, Clone)]
+// See move_generation/init_magic.rs for impl block with initiatlization
+#[derive(Debug, Copy, Clone)]
 pub struct MagicEntry {
     magic: u64,
     table: *mut u64, // Unsafe pointer not to use a safe bigger slice
@@ -16,18 +21,34 @@ pub struct MagicEntry {
     postmask: u64,
 }
 
-// The magic entries for rooks and bishops
+// The magic entries for rooks and bishops (also mutable because pure functions cannot access
+// static variable)
 static mut BISHOP_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
 static mut ROOK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
 
+// Safe wrapper around the unsafe initialization (that have to be sequential)
+pub fn init_magic_tables() {
+    unsafe {
+        for ((rook_entry, bishop_entry), square) in ROOK_TABLE.iter_mut().zip(BISHOP_TABLE.iter_mut()).zip(0u8..) {
+            *rook_entry = MagicEntry::rook_magic(square);
+            *bishop_entry = MagicEntry::bishop_magic(square);
 
-impl MagicEntry {
-    const fn empty_magic() -> Self {
-        MagicEntry {
-            magic: 0,
-            table: std::ptr::null_mut(),
-            black_mask: 0,
-            postmask: 0,
+            rook_entry.fill_attack_table(square, true);
+            //bishop_entry.fill_attack_table(square, false);
         }
+    }
+}
+
+pub fn rook_attack(square: u8, mut occupancy: u64) -> u64 {
+    let magic_entry = unsafe {
+        ROOK_TABLE[usize::from(square)]
+    };
+
+    let table_pointer = magic_entry.table;
+
+    occupancy |= magic_entry.black_mask;
+    let table_offset = get_fixed_offset(occupancy, magic_entry.magic);
+    unsafe {
+        ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
     }
 }
