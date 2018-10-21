@@ -1,45 +1,29 @@
+mod board;
 mod move_generation;
+mod utils;
 
-use move_generation::MagicEntry;
+pub use board::Board;
+
+pub use utils::*;
+
 use move_generation::init_magic_tables;
-use move_generation::rook_attack;
-use move_generation::find_attack_table_holes;
 
 fn main() {
-    let x = &[1, 2, 3];
-    for i in x {
-        println!("{} {}", i, x[2]);
-    }
-    println!("Hello, world!");
-
-    println!("{}", std::mem::size_of::<MagicEntry>());
-
     init_magic_tables();
 
-    print_bitboard_mask(rook_attack(0, 0));
-    print_bitboard_mask(rook_attack(0, 2));
-    print_bitboard_mask(rook_attack(51, 2));
+    println!("board size {}", std::mem::size_of::<Board>());
 
-    find_attack_table_holes();
+    let board = Board::initial_position();
+
+    println!("{:?}", board);
 
     /*
-    print_bitboard_mask(rook_black_mask(0));
-    print_bitboard_mask(rook_key(0, 0));
-    print_bitboard_mask(rook_key(0, 64));
-    print_bitboard_mask(rook_attack(0, 64));
-    print_bitboard_mask(rook_attack(0, 32));
-    print_bitboard_mask(rook_attack(0, 2));
+    for mov in board.simple_pawn_pushs().chain(board.double_pawn_pushs()) {
+        println!("{:?}", mov);
+    }
     */
+    for mov in board.simple_pawn_pushs() {
+        println!("{:?}", mov);
+    }
 }
 
-#[allow(dead_code)]
-fn print_bitboard_mask(u: u64) {
-    for i in (0..8).rev() {
-        let line: u8 = ((u >> (8*i)) & 0xff) as u8;
-        for j in 0..8 {
-            print!("{}", (line >> j) & 0x1);
-        }
-        println!();
-    }
-    println!();
-}

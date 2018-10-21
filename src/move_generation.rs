@@ -1,8 +1,12 @@
 mod init_magic;
 
 use std::ptr;
+use std::fmt;
 
 use self::init_magic::get_fixed_offset;
+use board::Board;
+
+use utils::*;
 
 // unsafe attack table for rooks, bishops and queens
 // this is a black magic fancy table with shared attacks
@@ -39,9 +43,9 @@ pub fn init_magic_tables() {
     }
 }
 
-pub fn rook_attack(square: u8, mut occupancy: u64) -> u64 {
+pub fn rook_attack(square: Square, mut occupancy: u64) -> u64 {
     let magic_entry = unsafe {
-        ROOK_TABLE[usize::from(square)]
+        ROOK_TABLE[usize::from(square.0)]
     };
 
     let table_pointer = magic_entry.table;
@@ -51,6 +55,74 @@ pub fn rook_attack(square: u8, mut occupancy: u64) -> u64 {
     unsafe {
         ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
     }
+}
+
+pub fn bishop_attack(square: Square, mut occupancy: u64) -> u64 {
+    let magic_entry = unsafe {
+        BISHOP_TABLE[usize::from(square.0)]
+    };
+
+    let table_pointer = magic_entry.table;
+
+    occupancy |= magic_entry.black_mask;
+    let table_offset = get_fixed_offset(occupancy, magic_entry.magic);
+    unsafe {
+        ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
+    }
+}
+
+
+// Moves iterator
+pub struct Move(u16);
+
+impl Move {
+    // Returns a new move with the initial and destination squares
+    fn new_from_to(from: Square, to: Square) -> Self {
+        Move(u16::from(from.0) + (u16::from(to.0) << 6))
+    }
+
+    fn initial_square(&self) -> Square {
+        Square::new((self.0 & 0x3f) as u8)
+    }
+
+    fn destination_square(&self) -> Square {
+        Square::new((self.0 & 0xfc0) as u8)
+    }
+}
+
+impl Board {
+    // Returns the basic pawn pushs without promotion
+    pub fn simple_pawn_pushs(&self) -> impl Iterator <Item = Move> {
+        // basic pawns are pawns that won't promote (ie not on the last line)
+        let basic_pawns = self.pawns.intersect(self.occupancy[WHITE]).intersect(LAST_LINE.not());
+        let simple_pushed_pawns = basic_pawns.shift_left(8).intersect(self.empty_squares());
+
+        simple_pushed_pawns.map(|bitboard|
+                                Move::new_from_to(bitboard.shift_right(8).to_square(),
+                                                  bitboard.to_square()))
+    }
+
+    // Returns the pawns that can do the initial double pushs
+    pub fn double_pawn_pushs(&self) -> impl Iterator <Item = Move> {
+        let starting_pawns = self.pawns.intersect(self.occupancy[WHITE]).intersect(PAWN_FIRST_LINE);
+
+        // To be double pushed, the pawns have to be able to move once forward
+        let simple_pushed_pawns = starting_pawns.shift_left(8).intersect(self.empty_squares());
+        let double_pushed_pawns = starting_pawns.shift_left(16).intersect(self.empty_squares());
+
+        // The pawns that can both be pushed for one and two lines forward
+        let double_pushed_pawns = double_pushed_pawns.intersect(simple_pushed_pawns);
+
+        double_pushed_pawns.map(|bitboard|
+                                Move::new_from_to(bitboard.shift_right(16).to_square(),
+                                                  bitboard.to_square()))
+    }
+}
+
+impl fmt::Debug for Move {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Move ({:?} {:?})", self.initial_square(), self.destination_square())
+    } 
 }
 
 #[allow(dead_code)]
