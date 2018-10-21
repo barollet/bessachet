@@ -3,6 +3,7 @@ mod move_generation;
 use move_generation::MagicEntry;
 use move_generation::init_magic_tables;
 use move_generation::rook_attack;
+use move_generation::find_attack_table_holes;
 
 fn main() {
     let x = &[1, 2, 3];
@@ -18,6 +19,8 @@ fn main() {
     print_bitboard_mask(rook_attack(0, 0));
     print_bitboard_mask(rook_attack(0, 2));
     print_bitboard_mask(rook_attack(51, 2));
+
+    find_attack_table_holes();
 
     /*
     print_bitboard_mask(rook_black_mask(0));
