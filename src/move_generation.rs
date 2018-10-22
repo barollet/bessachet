@@ -4,7 +4,7 @@ use std::ptr;
 use std::fmt;
 
 use self::init_magic::get_fixed_offset;
-use board::Board;
+use board::{Board, BitBoard};
 
 use utils::*;
 
@@ -43,32 +43,24 @@ pub fn init_magic_tables() {
     }
 }
 
-pub fn rook_attack(square: Square, mut occupancy: u64) -> u64 {
-    let magic_entry = unsafe {
-        ROOK_TABLE[usize::from(square.0)]
-    };
+fn raw_sliding_attack(square: Square, occupancy: BitBoard, table: &[MagicEntry; 64]) -> BitBoard {
+    let magic_entry = table[usize::from(square.0)];
 
     let table_pointer = magic_entry.table;
 
-    occupancy |= magic_entry.black_mask;
-    let table_offset = get_fixed_offset(occupancy, magic_entry.magic);
-    unsafe {
+    let hash_key = occupancy.0 | magic_entry.black_mask;
+    let table_offset = get_fixed_offset(hash_key, magic_entry.magic);
+    BitBoard::new(unsafe {
         ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
-    }
+    })
 }
 
-pub fn bishop_attack(square: Square, mut occupancy: u64) -> u64 {
-    let magic_entry = unsafe {
-        BISHOP_TABLE[usize::from(square.0)]
-    };
+fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
+    unsafe { raw_sliding_attack(square, occupancy, &ROOK_TABLE) }
+}
 
-    let table_pointer = magic_entry.table;
-
-    occupancy |= magic_entry.black_mask;
-    let table_offset = get_fixed_offset(occupancy, magic_entry.magic);
-    unsafe {
-        ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
-    }
+fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
+    unsafe { raw_sliding_attack(square, occupancy, &BISHOP_TABLE) }
 }
 
 
@@ -86,7 +78,7 @@ impl Move {
     }
 
     fn destination_square(&self) -> Square {
-        Square::new((self.0 & 0xfc0) as u8)
+        Square::new((self.0 >> 6) as u8 & 0x3f)
     }
 }
 
@@ -98,8 +90,8 @@ impl Board {
         let simple_pushed_pawns = basic_pawns.shift_left(8).intersect(self.empty_squares());
 
         simple_pushed_pawns.map(|bitboard|
-                                Move::new_from_to(bitboard.shift_right(8).to_square(),
-                                                  bitboard.to_square()))
+                                Move::new_from_to(bitboard.shift_right(8).as_square(),
+                                                  bitboard.as_square()))
     }
 
     // Returns the pawns that can do the initial double pushs
@@ -108,21 +100,52 @@ impl Board {
 
         // To be double pushed, the pawns have to be able to move once forward
         let simple_pushed_pawns = starting_pawns.shift_left(8).intersect(self.empty_squares());
-        let double_pushed_pawns = starting_pawns.shift_left(16).intersect(self.empty_squares());
-
         // The pawns that can both be pushed for one and two lines forward
-        let double_pushed_pawns = double_pushed_pawns.intersect(simple_pushed_pawns);
+        let double_pushed_pawns = simple_pushed_pawns.shift_left(8).intersect(self.empty_squares());
 
         double_pushed_pawns.map(|bitboard|
-                                Move::new_from_to(bitboard.shift_right(16).to_square(),
-                                                  bitboard.to_square()))
+                                Move::new_from_to(bitboard.shift_right(16).as_square(),
+                                                  bitboard.as_square()))
     }
+
+    // TODO Pawn captures
+    //
+    // TODO Pawn push with promotion
+    //
+    // TODO Pawn en passant
+
+    // TODO Knight
+
+    // TODO redo this with quiet moves and capture moves distinction
+    fn sliding_attack(&self, piece: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
+        piece_attack(piece.as_square(), self.occupied_squares())
+            .intersect(self.occupancy[WHITE].not())
+            .map(move |bitboard| Move::new_from_to(piece.as_square(), bitboard.as_square()))
+    }
+
+    pub fn bishop_moves(&self) -> impl Iterator <Item = Move> + '_ {
+        self.bishops.intersect(self.occupancy[WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+    }
+
+    pub fn rook_moves(&self) -> impl Iterator <Item = Move> + '_ {
+        self.rooks.intersect(self.occupancy[WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
+    }
+
+    pub fn queen_moves(&self) -> impl Iterator <Item = Move> + '_ {
+        self.bishops.intersect(self.occupancy[WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+    }
+
+    // TODO king
+    // TODO castle
 }
+
+
+
 
 impl fmt::Debug for Move {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Move ({:?} {:?})", self.initial_square(), self.destination_square())
-    } 
+        write!(f, "Move {} {}", self.initial_square(), self.destination_square())
+    }
 }
 
 #[allow(dead_code)]

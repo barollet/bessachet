@@ -15,14 +15,19 @@ fn main() {
 
     let board = Board::initial_position();
 
-    println!("{:?}", board);
-
-    /*
     for mov in board.simple_pawn_pushs().chain(board.double_pawn_pushs()) {
         println!("{:?}", mov);
     }
-    */
-    for mov in board.simple_pawn_pushs() {
+
+    for mov in board.bishop_moves() {
+        println!("{:?}", mov);
+    }
+
+    for mov in board.rook_moves() {
+        println!("{:?}", mov);
+    }
+
+    for mov in board.queen_moves() {
         println!("{:?}", mov);
     }
 }

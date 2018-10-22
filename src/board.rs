@@ -47,33 +47,34 @@ impl Board {
     }
 
     #[inline]
-    pub fn occupancy(&self) -> BitBoard {
+    pub fn occupied_squares(&self) -> BitBoard {
         self.occupancy[WHITE].union(self.occupancy[BLACK])
     }
 
     #[inline]
     pub fn empty_squares(&self) -> BitBoard {
-        self.occupancy().not()
+        self.occupied_squares().not()
     }
 }
 
 #[derive(Copy, Clone)]
-pub struct BitBoard(u64);
+pub struct BitBoard(pub u64);
 
 impl BitBoard {
     pub const fn new(bitboard: u64) -> Self {
         BitBoard(bitboard)
     }
 
-    pub fn to_square(self) -> Square {
+    pub fn as_square(self) -> Square {
         Square(63u8 - self.0.leading_zeros() as u8)
     }
 
     // Returns the bitboard containing only the MSB and removes it
     #[inline]
     pub fn pop_msb_bitboard(&mut self) -> Self {
-        self.0 ^= 1u64 << self.0.leading_zeros();
-        BitBoard(1u64 << self.0.leading_zeros())
+        let singly_populated_bitboard: u64 = 1u64 << (63 - self.0.leading_zeros());
+        self.0 ^= singly_populated_bitboard;
+        BitBoard(singly_populated_bitboard)
     }
 
     // Basic binary operations
