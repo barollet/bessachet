@@ -1,5 +1,6 @@
 use std::fmt;
 use std::iter::FusedIterator;
+use std::mem;
 
 use utils::*;
 
@@ -19,13 +20,7 @@ use utils::*;
 // public attributes are for move generation
 // they are not supposed to be publicly accessed somewhere else
 pub struct Board {
-    pub pawns: BitBoard,
-    pub knights: BitBoard,
-    pub bishops: BitBoard,
-    pub rooks: BitBoard,
-    pub queens: BitBoard,
-    pub kings: BitBoard,
-
+    pub pieces: [BitBoard; 6],
     pub occupancy: [BitBoard; 2], // black pieces first
 }
 
@@ -34,26 +29,89 @@ impl Board {
     #![allow(clippy::unreadable_literal)]
     pub fn initial_position() -> Self {
         Board {
-            pawns:   BitBoard::new(0x00ff00000000ff00),
-            knights: BitBoard::new(0x4200000000000042),
-            bishops: BitBoard::new(0x2400000000000024),
-            rooks:   BitBoard::new(0x8100000000000081),
-            queens:  BitBoard::new(0x1000000000000010),
-            kings:   BitBoard::new(0x0800000000000008),
+            pieces:    [BitBoard::new(0x00ff00000000ff00),  // Pawns
+                        BitBoard::new(0x4200000000000042),  // Knights
+                        BitBoard::new(0x2400000000000024),  // Bishops
+                        BitBoard::new(0x8100000000000081),  // Rooks
+                        BitBoard::new(0x1000000000000010),  // Queens
+                        BitBoard::new(0x0800000000000008)], // Kings
 
             occupancy: [BitBoard::new(0xffff000000000000),
                         BitBoard::new(0x000000000000ffff)],
         }
     }
 
+    fn empty_board() -> Self {
+        Board {
+            pieces:    [BitBoard::new(0); 6],
+            occupancy: [BitBoard::new(0); 2],
+        }
+    }
+
+    pub fn from_fen(fen_string: &str) -> Result<Self, &'static str> {
+        let mut board = Board::empty_board();
+
+        let fen_parts: Vec<_> = fen_string.split_whitespace().collect();
+        if fen_parts.len() != 4 {
+            return Err("Invalid FEN string");
+        }
+
+        // Filling the board
+        let piece_lines: Vec<_> = fen_parts[0].split('/').collect();
+        if piece_lines.len() != 8 {
+            return Err("Invalid FEN string");
+        }
+        // Starting from the bottom line in white's perspective
+        for (piece_line, i) in piece_lines.iter().rev().zip(0u32..) {
+            let mut pos = 8;
+            for c in piece_line.chars() {
+                if let Some(offset) = c.to_digit(10) {
+                    pos -= offset;
+                } else {
+                    pos -= 1;
+
+                    let singly_populated_bitboard = BitBoard::new(1 << (8*i + pos));
+                    // Piece bitboard
+                    let new_piece = match c.to_ascii_lowercase() {
+                        'p' => Pieces::PAWN,
+                        'n' => Pieces::KNIGHT,
+                        'b' => Pieces::BISHOP,
+                        'r' => Pieces::ROOK,
+                        'q' => Pieces::QUEEN,
+                        'k' => Pieces::KING,
+                        _ => return Err("Invalid FEN string"),
+                    };
+                    board[new_piece] = board[new_piece].union(singly_populated_bitboard);
+
+                    // Occupancy
+                    let color = if c.is_ascii_lowercase() { Color::BLACK } else { Color::WHITE };
+                    board[color] = board[color].union(singly_populated_bitboard);
+                }
+            }
+        }
+
+        // Setting metadata
+        // TODO
+
+        Ok(board)
+    }
+
     #[inline]
     pub fn occupied_squares(&self) -> BitBoard {
-        self.occupancy[WHITE].union(self.occupancy[BLACK])
+        self[Color::WHITE].union(self[Color::BLACK])
     }
 
     #[inline]
     pub fn empty_squares(&self) -> BitBoard {
         self.occupied_squares().not()
+    }
+
+    pub fn switch_side(&mut self) {
+        for bitboard in &mut self.pieces {
+            *bitboard = BitBoard::new(bitboard.0.reverse_bits())
+        }
+        let mut white_pieces = self[Color::WHITE]; // Happy borrow checker
+        mem::swap(&mut white_pieces, &mut self[Color::BLACK]);
     }
 }
 
@@ -61,18 +119,24 @@ impl Board {
 pub struct BitBoard(pub u64);
 
 impl BitBoard {
+    #[inline]
     pub const fn new(bitboard: u64) -> Self {
         BitBoard(bitboard)
     }
 
+    pub const fn empty() -> Self {
+        BitBoard(0)
+    }
+
+    #[inline]
     pub fn as_square(self) -> Square {
         Square(63u8 - self.0.leading_zeros() as u8)
     }
 
-    // Returns the bitboard containing only the MSB and removes it
+    // Returns the bitboard containing only the LSB and removes it
     #[inline]
-    pub fn pop_msb_bitboard(&mut self) -> Self {
-        let singly_populated_bitboard: u64 = 1u64 << (63 - self.0.leading_zeros());
+    pub fn pop_lsb_bitboard(&mut self) -> Self {
+        let singly_populated_bitboard = self.0 & self.0.overflowing_neg().0;
         self.0 ^= singly_populated_bitboard;
         BitBoard(singly_populated_bitboard)
     }
@@ -116,7 +180,7 @@ impl Iterator for BitBoard {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.0 != 0 {
-            Some(self.pop_msb_bitboard())
+            Some(self.pop_lsb_bitboard())
         } else  {
             None
         }
@@ -127,15 +191,15 @@ impl FusedIterator for BitBoard {}
 
 impl fmt::Debug for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.pawns)?;
-        write!(f, "{:?}", self.knights)?;
-        write!(f, "{:?}", self.bishops)?;
-        write!(f, "{:?}", self.rooks)?;
-        write!(f, "{:?}", self.queens)?;
-        write!(f, "{:?}", self.kings)?;
-        write!(f, "{:?}", self.occupancy[WHITE])?;
-        write!(f, "{:?}", self.occupancy[BLACK])
-    } 
+        write!(f, "{:?}", self[Pieces::PAWN])?;
+        write!(f, "{:?}", self[Pieces::KNIGHT])?;
+        write!(f, "{:?}", self[Pieces::BISHOP])?;
+        write!(f, "{:?}", self[Pieces::ROOK])?;
+        write!(f, "{:?}", self[Pieces::QUEEN])?;
+        write!(f, "{:?}", self[Pieces::KING])?;
+        write!(f, "{:?}", self[Color::WHITE])?;
+        write!(f, "{:?}", self[Color::BLACK])
+    }
 }
 
 impl fmt::Debug for BitBoard {

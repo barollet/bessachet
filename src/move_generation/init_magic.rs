@@ -1,6 +1,6 @@
 use std::ptr;
 
-use move_generation::{ATTACK_TABLE, MagicEntry};
+use move_generation::{SLIDING_ATTACK_TABLE, MagicEntry};
 
 // Note: see the magic factors at the end of this file
 
@@ -10,7 +10,7 @@ impl MagicEntry {
         MagicEntry {
             magic: ROOK_MAGIC[usize::from(square)].0,
             table: unsafe {
-                &mut ATTACK_TABLE[ROOK_MAGIC[usize::from(square)].1]
+                &mut SLIDING_ATTACK_TABLE[ROOK_MAGIC[usize::from(square)].1]
             },
             black_mask: rook_black_mask(square),
             postmask: rook_attack_empty_board(square),
@@ -21,7 +21,7 @@ impl MagicEntry {
         MagicEntry {
             magic: BISHOP_MAGIC[usize::from(square)].0,
             table: unsafe {
-                &mut ATTACK_TABLE[BISHOP_MAGIC[usize::from(square)].1]
+                &mut SLIDING_ATTACK_TABLE[BISHOP_MAGIC[usize::from(square)].1]
             },
             black_mask: bishop_black_mask(square),
             postmask: bishop_attack_on_empty_board(square),

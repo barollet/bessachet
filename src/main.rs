@@ -1,3 +1,5 @@
+#![feature(reverse_bits)]
+
 mod board;
 mod move_generation;
 mod utils;
@@ -15,6 +17,7 @@ fn main() {
 
     let board = Board::initial_position();
 
+    /*
     for mov in board.simple_pawn_pushs().chain(board.double_pawn_pushs()) {
         println!("{:?}", mov);
     }
@@ -29,6 +32,9 @@ fn main() {
 
     for mov in board.queen_moves() {
         println!("{:?}", mov);
-    }
+    }*/
+
+    //let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
+    //println!("{:?}", board);
 }
 

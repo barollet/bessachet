@@ -14,7 +14,7 @@ use utils::*;
 //
 // This table is computed at runtime not to make the executable table too big
 // hence the mut keyword
-static mut ATTACK_TABLE: [u64; 50866] = [0; 50866]; // 406928 bytes
+static mut SLIDING_ATTACK_TABLE: [u64; 50866] = [0; 50866]; // 406928 bytes
 
 // See move_generation/init_magic.rs for impl block with initiatlization
 #[derive(Debug, Copy, Clone)]
@@ -26,14 +26,14 @@ pub struct MagicEntry {
 }
 
 // The magic entries for rooks and bishops (also mutable because pure functions cannot access
-// static variable)
-static mut BISHOP_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
-static mut ROOK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
+// static variables)
+static mut BISHOP_ATTACK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
+static mut ROOK_ATTACK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
 
 // Safe wrapper around the unsafe initialization (that have to be sequential)
 pub fn init_magic_tables() {
     unsafe {
-        for ((rook_entry, bishop_entry), square) in ROOK_TABLE.iter_mut().zip(BISHOP_TABLE.iter_mut()).zip(0u8..) {
+        for ((rook_entry, bishop_entry), square) in ROOK_ATTACK_TABLE.iter_mut().zip(BISHOP_ATTACK_TABLE.iter_mut()).zip(0u8..) {
             *rook_entry = MagicEntry::rook_magic(square);
             *bishop_entry = MagicEntry::bishop_magic(square);
 
@@ -56,13 +56,14 @@ fn raw_sliding_attack(square: Square, occupancy: BitBoard, table: &[MagicEntry; 
 }
 
 fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    unsafe { raw_sliding_attack(square, occupancy, &ROOK_TABLE) }
+    unsafe { raw_sliding_attack(square, occupancy, &ROOK_ATTACK_TABLE) }
 }
 
 fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    unsafe { raw_sliding_attack(square, occupancy, &BISHOP_TABLE) }
+    unsafe { raw_sliding_attack(square, occupancy, &BISHOP_ATTACK_TABLE) }
 }
 
+static KNIGHT_ATTACK_TABLE: [BitBoard; 64] = knight_attack_table(); // 512 bytes
 
 // Moves iterator
 pub struct Move(u16);
@@ -86,7 +87,7 @@ impl Board {
     // Returns the basic pawn pushs without promotion
     pub fn simple_pawn_pushs(&self) -> impl Iterator <Item = Move> {
         // basic pawns are pawns that won't promote (ie not on the last line)
-        let basic_pawns = self.pawns.intersect(self.occupancy[WHITE]).intersect(LAST_LINE.not());
+        let basic_pawns = self[Pieces::PAWN].intersect(self[Color::WHITE]).intersect(LAST_LINE.not());
         let simple_pushed_pawns = basic_pawns.shift_left(8).intersect(self.empty_squares());
 
         simple_pushed_pawns.map(|bitboard|
@@ -96,7 +97,7 @@ impl Board {
 
     // Returns the pawns that can do the initial double pushs
     pub fn double_pawn_pushs(&self) -> impl Iterator <Item = Move> {
-        let starting_pawns = self.pawns.intersect(self.occupancy[WHITE]).intersect(PAWN_FIRST_LINE);
+        let starting_pawns = self[Pieces::PAWN].intersect(self[Color::WHITE]).intersect(PAWN_FIRST_LINE);
 
         // To be double pushed, the pawns have to be able to move once forward
         let simple_pushed_pawns = starting_pawns.shift_left(8).intersect(self.empty_squares());
@@ -119,20 +120,21 @@ impl Board {
     // TODO redo this with quiet moves and capture moves distinction
     fn sliding_attack(&self, piece: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
         piece_attack(piece.as_square(), self.occupied_squares())
-            .intersect(self.occupancy[WHITE].not())
+            .intersect(self[Color::WHITE].not())
             .map(move |bitboard| Move::new_from_to(piece.as_square(), bitboard.as_square()))
     }
 
     pub fn bishop_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self.bishops.intersect(self.occupancy[WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+        self[Pieces::BISHOP].intersect(self[Color::WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
     }
 
     pub fn rook_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self.rooks.intersect(self.occupancy[WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
+        self[Pieces::ROOK].intersect(self[Color::WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
     }
 
     pub fn queen_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self.bishops.intersect(self.occupancy[WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+        self[Pieces::QUEEN].intersect(self[Color::WHITE]).flat_map(move |queen| self.sliding_attack(queen, bishop_attack)
+                                                                                    .chain(self.sliding_attack(queen, rook_attack)))
     }
 
     // TODO king
@@ -148,12 +150,105 @@ impl fmt::Debug for Move {
     }
 }
 
+const fn knight_attack_table() -> [BitBoard; 64] {
+    [
+        BitBoard::new(0x20400),
+        BitBoard::new(0x50800),
+        BitBoard::new(0xa1100),
+        BitBoard::new(0x142200),
+        BitBoard::new(0x284400),
+        BitBoard::new(0x508800),
+        BitBoard::new(0xa01000),
+        BitBoard::new(0x402000),
+        BitBoard::new(0x2040004),
+        BitBoard::new(0x5080008),
+        BitBoard::new(0xa110011),
+        BitBoard::new(0x14220022),
+        BitBoard::new(0x28440044),
+        BitBoard::new(0x50880088),
+        BitBoard::new(0xa0100010),
+        BitBoard::new(0x40200020),
+        BitBoard::new(0x204000402),
+        BitBoard::new(0x508000805),
+        BitBoard::new(0xa1100110a),
+        BitBoard::new(0x1422002214),
+        BitBoard::new(0x2844004428),
+        BitBoard::new(0x5088008850),
+        BitBoard::new(0xa0100010a0),
+        BitBoard::new(0x4020002040),
+        BitBoard::new(0x20400040200),
+        BitBoard::new(0x50800080500),
+        BitBoard::new(0xa1100110a00),
+        BitBoard::new(0x142200221400),
+        BitBoard::new(0x284400442800),
+        BitBoard::new(0x508800885000),
+        BitBoard::new(0xa0100010a000),
+        BitBoard::new(0x402000204000),
+        BitBoard::new(0x2040004020000),
+        BitBoard::new(0x5080008050000),
+        BitBoard::new(0xa1100110a0000),
+        BitBoard::new(0x14220022140000),
+        BitBoard::new(0x28440044280000),
+        BitBoard::new(0x50880088500000),
+        BitBoard::new(0xa0100010a00000),
+        BitBoard::new(0x40200020400000),
+        BitBoard::new(0x204000402000000),
+        BitBoard::new(0x508000805000000),
+        BitBoard::new(0xa1100110a000000),
+        BitBoard::new(0x1422002214000000),
+        BitBoard::new(0x2844004428000000),
+        BitBoard::new(0x5088008850000000),
+        BitBoard::new(0xa0100010a0000000),
+        BitBoard::new(0x4020002040000000),
+        BitBoard::new(0x400040200000000),
+        BitBoard::new(0x800080500000000),
+        BitBoard::new(0x1100110a00000000),
+        BitBoard::new(0x2200221400000000),
+        BitBoard::new(0x4400442800000000),
+        BitBoard::new(0x8800885000000000),
+        BitBoard::new(0x100010a000000000),
+        BitBoard::new(0x2000204000000000),
+        BitBoard::new(0x4020000000000),
+        BitBoard::new(0x8050000000000),
+        BitBoard::new(0x110a0000000000),
+        BitBoard::new(0x22140000000000),
+        BitBoard::new(0x44280000000000),
+        BitBoard::new(0x88500000000000),
+        BitBoard::new(0x10a00000000000),
+        BitBoard::new(0x20400000000000),
+        ]
+}
+
+// Prints the knight attack table
+#[allow(dead_code)]
+pub fn generate_knight_attacks() {
+    let mut knight_attacks = [BitBoard::empty(); 64];
+
+    let knight_moves = [(1, 2), (1, -2), (-1, 2), (-1, -2),
+                        (2, 1), (2, -1), (-2, 1), (-2, -1)];
+
+    for (attack_bitboard, sq) in knight_attacks.iter_mut().zip(0u8..) {
+        let (rank, file) = Square(sq).rank_file();
+        let (rank, file) = (rank as i8, file as i8);
+
+        for (i, j) in &knight_moves {
+            if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
+                *attack_bitboard = attack_bitboard.union(Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard());
+            }
+        }
+    }
+
+    for b in knight_attacks.iter() {
+        println!("BitBoard::new(0x{:x}),", b.0);
+    }
+}
+
 #[allow(dead_code)]
 pub fn find_attack_table_holes() {
     unsafe {
         let mut hole_start: usize = 0;
         let mut holes_counter = 0;
-        for (i, entry) in ATTACK_TABLE.iter().enumerate() {
+        for (i, entry) in SLIDING_ATTACK_TABLE.iter().enumerate() {
             if *entry != 0 {
                 if i - hole_start > 50 {
                     println!("hole at {} of size {}", hole_start, i - hole_start);
