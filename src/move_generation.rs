@@ -87,25 +87,25 @@ impl Board {
     // Returns the basic pawn pushs without promotion
     pub fn simple_pawn_pushs(&self) -> impl Iterator <Item = Move> {
         // basic pawns are pawns that won't promote (ie not on the last line)
-        let basic_pawns = self[Pieces::PAWN].intersect(self[Color::WHITE]).intersect(LAST_LINE.not());
-        let simple_pushed_pawns = basic_pawns.shift_left(8).intersect(self.empty_squares());
+        let basic_pawns = self[Pieces::PAWN] & self[Color::WHITE] & !LAST_LINE;
+        let simple_pushed_pawns = (basic_pawns << 8) & self.empty_squares();
 
         simple_pushed_pawns.map(|bitboard|
-                                Move::new_from_to(bitboard.shift_right(8).as_square(),
+                                Move::new_from_to((bitboard >> 8).as_square(),
                                                   bitboard.as_square()))
     }
 
     // Returns the pawns that can do the initial double pushs
     pub fn double_pawn_pushs(&self) -> impl Iterator <Item = Move> {
-        let starting_pawns = self[Pieces::PAWN].intersect(self[Color::WHITE]).intersect(PAWN_FIRST_LINE);
+        let starting_pawns = self[Pieces::PAWN] & self[Color::WHITE] & PAWN_FIRST_LINE;
 
         // To be double pushed, the pawns have to be able to move once forward
-        let simple_pushed_pawns = starting_pawns.shift_left(8).intersect(self.empty_squares());
+        let simple_pushed_pawns = (starting_pawns << 8) & self.empty_squares();
         // The pawns that can both be pushed for one and two lines forward
-        let double_pushed_pawns = simple_pushed_pawns.shift_left(8).intersect(self.empty_squares());
+        let double_pushed_pawns = (simple_pushed_pawns << 8) & self.empty_squares();
 
         double_pushed_pawns.map(|bitboard|
-                                Move::new_from_to(bitboard.shift_right(16).as_square(),
+                                Move::new_from_to((bitboard >> 16).as_square(),
                                                   bitboard.as_square()))
     }
 
@@ -116,28 +116,27 @@ impl Board {
     // TODO Pawn en passant
 
     pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self[Pieces::KNIGHT].intersect(self[Color::WHITE])
-            .flat_map(move |knight| KNIGHT_ATTACK_TABLE[knight.as_index()].intersect(self[Color::WHITE].not())
+        (self[Pieces::KNIGHT] & self[Color::WHITE])
+            .flat_map(move |knight| (KNIGHT_ATTACK_TABLE[knight.as_index()] & !self[Color::WHITE])
                       .map(move |bitboard| Move::new_from_to(knight.as_square(), bitboard.as_square())))
     }
 
     // TODO redo this with quiet moves and capture moves distinction
     fn sliding_attack(&self, piece: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
-        piece_attack(piece.as_square(), self.occupied_squares())
-            .intersect(self[Color::WHITE].not())
+        (piece_attack(piece.as_square(), self.occupied_squares()) & !self[Color::WHITE])
             .map(move |bitboard| Move::new_from_to(piece.as_square(), bitboard.as_square()))
     }
 
     pub fn bishop_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self[Pieces::BISHOP].intersect(self[Color::WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+        (self[Pieces::BISHOP] & self[Color::WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
     }
 
     pub fn rook_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self[Pieces::ROOK].intersect(self[Color::WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
+        (self[Pieces::ROOK] & self[Color::WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
     }
 
     pub fn queen_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        self[Pieces::QUEEN].intersect(self[Color::WHITE]).flat_map(move |queen| self.sliding_attack(queen, bishop_attack)
+        (self[Pieces::QUEEN] & self[Color::WHITE]).flat_map(move |queen| self.sliding_attack(queen, bishop_attack)
                                                                                     .chain(self.sliding_attack(queen, rook_attack)))
     }
 
@@ -154,6 +153,7 @@ impl fmt::Debug for Move {
     }
 }
 
+#[allow(clippy::unreadable_literal)]
 const fn knight_attack_table() -> [BitBoard; 64] {
     [
         BitBoard::new(0x20400),
@@ -237,7 +237,7 @@ pub fn generate_knight_attacks() {
 
         for (i, j) in &knight_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard = attack_bitboard.union(Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard());
+                *attack_bitboard |= Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
             }
         }
     }

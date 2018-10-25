@@ -1,6 +1,7 @@
 use std::fmt;
 use std::iter::FusedIterator;
 use std::mem;
+use std::ops::{BitAnd, BitOr, BitOrAssign, Not, Shl, Shr};
 
 use utils::*;
 
@@ -81,11 +82,11 @@ impl Board {
                         'k' => Pieces::KING,
                         _ => return Err("Invalid FEN string"),
                     };
-                    board[new_piece] = board[new_piece].union(singly_populated_bitboard);
+                    board[new_piece] |= singly_populated_bitboard;
 
                     // Occupancy
                     let color = if c.is_ascii_lowercase() { Color::BLACK } else { Color::WHITE };
-                    board[color] = board[color].union(singly_populated_bitboard);
+                    board[color] |= singly_populated_bitboard;
                 }
             }
         }
@@ -98,7 +99,7 @@ impl Board {
 
     #[inline]
     pub fn occupied_squares(&self) -> BitBoard {
-        self[Color::WHITE].union(self[Color::BLACK])
+        self[Color::WHITE] | self[Color::BLACK]
     }
 
     #[inline]
@@ -145,37 +146,6 @@ impl BitBoard {
         self.0 ^= singly_populated_bitboard;
         BitBoard(singly_populated_bitboard)
     }
-
-    // Basic binary operations
-    #[inline]
-    pub const fn intersect(self, other_bitboard: Self) -> Self {
-        BitBoard(self.0 & other_bitboard.0)
-    }
-
-    #[inline]
-    pub const fn union(self, other_bitboard: Self) -> Self {
-        BitBoard(self.0 | other_bitboard.0)
-    }
-
-    #[inline]
-    pub const fn xor(self, other_bitboard: Self) -> Self {
-        BitBoard(self.0 ^ other_bitboard.0)
-    }
-
-    #[inline]
-    pub const fn shift_left(self, shift: u32) -> Self {
-        BitBoard(self.0 << shift)
-    }
-
-    #[inline]
-    pub const fn shift_right(self, shift: u32) -> Self {
-        BitBoard(self.0 >> shift)
-    }
-
-    #[inline]
-    pub const fn not(self) -> Self {
-        BitBoard(!self.0)
-    }
 }
 
 // Iterates over the singly populated bitboards of the given bitboard
@@ -189,6 +159,47 @@ impl Iterator for BitBoard {
         } else  {
             None
         }
+    }
+}
+
+impl BitAnd for BitBoard {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        BitBoard::new(self.0 & rhs.0)
+    }
+}
+
+impl BitOr for BitBoard {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        BitBoard::new(self.0 | rhs.0)
+    }
+}
+
+impl BitOrAssign for BitBoard {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl Not for BitBoard {
+    type Output = Self;
+    fn not(self) -> Self {
+        BitBoard::new(!self.0)
+    }
+}
+
+impl Shl<u32> for BitBoard {
+    type Output = Self;
+    fn shl(self, rhs: u32) -> Self {
+        BitBoard::new(self.0 << rhs)
+    }
+}
+
+impl Shr<u32> for BitBoard {
+    type Output = Self;
+    fn shr(self, rhs: u32) -> Self {
+        BitBoard::new(self.0 >> rhs)
     }
 }
 
