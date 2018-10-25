@@ -17,6 +17,9 @@ fn main() {
 
     let board = Board::initial_position();
 
+    for mov in board.knight_moves() {
+        println!("{:?}", mov);
+    }
     /*
     for mov in board.simple_pawn_pushs().chain(board.double_pawn_pushs()) {
         println!("{:?}", mov);

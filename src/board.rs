@@ -133,6 +133,11 @@ impl BitBoard {
         Square(63u8 - self.0.leading_zeros() as u8)
     }
 
+    #[inline]
+    pub fn as_index(self) -> usize {
+        63usize - self.0.leading_zeros() as usize
+    }
+
     // Returns the bitboard containing only the LSB and removes it
     #[inline]
     pub fn pop_lsb_bitboard(&mut self) -> Self {

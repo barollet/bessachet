@@ -56,11 +56,11 @@ fn raw_sliding_attack(square: Square, occupancy: BitBoard, table: &[MagicEntry; 
 }
 
 fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    unsafe { raw_sliding_attack(square, occupancy, &ROOK_ATTACK_TABLE) }
+    raw_sliding_attack(square, occupancy, unsafe { &ROOK_ATTACK_TABLE })
 }
 
 fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    unsafe { raw_sliding_attack(square, occupancy, &BISHOP_ATTACK_TABLE) }
+    raw_sliding_attack(square, occupancy, unsafe { &BISHOP_ATTACK_TABLE })
 }
 
 static KNIGHT_ATTACK_TABLE: [BitBoard; 64] = knight_attack_table(); // 512 bytes
@@ -115,7 +115,11 @@ impl Board {
     //
     // TODO Pawn en passant
 
-    // TODO Knight
+    pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {
+        self[Pieces::KNIGHT].intersect(self[Color::WHITE])
+            .flat_map(move |knight| KNIGHT_ATTACK_TABLE[knight.as_index()].intersect(self[Color::WHITE].not())
+                      .map(move |bitboard| Move::new_from_to(knight.as_square(), bitboard.as_square())))
+    }
 
     // TODO redo this with quiet moves and capture moves distinction
     fn sliding_attack(&self, piece: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
