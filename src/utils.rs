@@ -29,8 +29,10 @@ impl IndexMut<Color> for Board {
     }
 }
 
-pub const LAST_LINE: BitBoard = BitBoard::new(0xff00000000000000);
-pub const PAWN_FIRST_LINE: BitBoard = BitBoard::new(0xff00);
+pub const ROW_2: BitBoard = BitBoard::new(0xff00);
+pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
+pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
+pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
 #[derive(Copy, Clone)]
 pub enum Pieces {

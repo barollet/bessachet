@@ -20,6 +20,7 @@ use utils::*;
 
 // public attributes are for move generation
 // they are not supposed to be publicly accessed somewhere else
+#[derive(Clone)]
 pub struct Board {
     pub pieces: [BitBoard; 6],
     pub occupancy: [BitBoard; 2], // black pieces first

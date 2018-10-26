@@ -74,6 +74,11 @@ impl Move {
         Move(u16::from(from.0) + (u16::from(to.0) << 6))
     }
 
+    // Helper to get an iterator over promotions
+    fn from_to_with_promotion(from: Square, to: Square) -> impl Iterator <Item = Move> {
+        // TODO
+    }
+
     fn initial_square(&self) -> Square {
         Square::new((self.0 & 0x3f) as u8)
     }
@@ -87,7 +92,7 @@ impl Board {
     // Returns the basic pawn pushs without promotion
     pub fn simple_pawn_pushs(&self) -> impl Iterator <Item = Move> {
         // basic pawns are pawns that won't promote (ie not on the last line)
-        let basic_pawns = self[Pieces::PAWN] & self[Color::WHITE] & !LAST_LINE;
+        let basic_pawns = self[Pieces::PAWN] & self[Color::WHITE] & !ROW_7;
         let simple_pushed_pawns = (basic_pawns << 8) & self.empty_squares();
 
         simple_pushed_pawns.map(|bitboard|
@@ -97,7 +102,7 @@ impl Board {
 
     // Returns the pawns that can do the initial double pushs
     pub fn double_pawn_pushs(&self) -> impl Iterator <Item = Move> {
-        let starting_pawns = self[Pieces::PAWN] & self[Color::WHITE] & PAWN_FIRST_LINE;
+        let starting_pawns = self[Pieces::PAWN] & self[Color::WHITE] & ROW_2;
 
         // To be double pushed, the pawns have to be able to move once forward
         let simple_pushed_pawns = (starting_pawns << 8) & self.empty_squares();
@@ -109,9 +114,23 @@ impl Board {
                                                   bitboard.as_square()))
     }
 
-    // TODO Pawn captures
-    //
+    pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> {
+        let basic_pawns = self[Pieces::PAWN] & self[Color::WHITE] & !ROW_7;
+        // left white capture
+        let left_capture_iterator = ((basic_pawns & !FILE_A) << 7 & self.empty_squares())
+            .map(|bitboard| Move::new_from_to((bitboard >> 7).as_square(), bitboard.as_square()));
+        // right white capture
+        let right_capture_iterator = ((basic_pawns & !FILE_H) << 9 & self.empty_squares())
+            .map(|bitboard| Move::new_from_to((bitboard >> 9).as_square(), bitboard.as_square()));
+        left_capture_iterator.chain(right_capture_iterator)
+    }
     // TODO Pawn push with promotion
+    pub fn pawn_promotion_moves(&self) -> impl Iterator <Item = Move> {
+        let promoting_pawns = self[Pieces::PAWN] & self[Color::WHITE] & ROW_7;
+        // push
+        let push_promotion_iterator = (promoting_pawns << 8) & self.empty_squares()
+        // catpure
+    }
     //
     // TODO Pawn en passant
 
