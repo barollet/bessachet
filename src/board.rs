@@ -24,22 +24,28 @@ use utils::*;
 pub struct Board {
     pub pieces: [BitBoard; 6],
     pub occupancy: [BitBoard; 2], // black pieces first
+
+    en_passant: BitBoard, // position of an en passant target (0 otherwise)
 }
 
 impl Board {
     // Returns a board representing the initial position
     #![allow(clippy::unreadable_literal)]
     pub fn initial_position() -> Self {
+        // See utils.rs for the piece order in the array
         Board {
-            pieces:    [BitBoard::new(0x00ff00000000ff00),  // Pawns
-                        BitBoard::new(0x4200000000000042),  // Knights
+            pieces:    [BitBoard::new(0x4200000000000042),  // Knights
                         BitBoard::new(0x2400000000000024),  // Bishops
                         BitBoard::new(0x8100000000000081),  // Rooks
                         BitBoard::new(0x1000000000000010),  // Queens
+
+                        BitBoard::new(0x00ff00000000ff00),  // Pawns
                         BitBoard::new(0x0800000000000008)], // Kings
 
-            occupancy: [BitBoard::new(0xffff000000000000),
-                        BitBoard::new(0x000000000000ffff)],
+            occupancy: [BitBoard::new(0xffff000000000000),  // Black
+                        BitBoard::new(0x000000000000ffff)], // White
+
+            en_passant: BitBoard::empty(),
         }
     }
 
@@ -47,6 +53,8 @@ impl Board {
         Board {
             pieces:    [BitBoard::new(0); 6],
             occupancy: [BitBoard::new(0); 2],
+
+            en_passant: BitBoard::empty(),
         }
     }
 
@@ -75,12 +83,12 @@ impl Board {
                     let singly_populated_bitboard = BitBoard::new(1 << (8*i + pos));
                     // Piece bitboard
                     let new_piece = match c.to_ascii_lowercase() {
-                        'p' => Pieces::PAWN,
-                        'n' => Pieces::KNIGHT,
-                        'b' => Pieces::BISHOP,
-                        'r' => Pieces::ROOK,
-                        'q' => Pieces::QUEEN,
-                        'k' => Pieces::KING,
+                        'p' => Piece::PAWN,
+                        'n' => Piece::KNIGHT,
+                        'b' => Piece::BISHOP,
+                        'r' => Piece::ROOK,
+                        'q' => Piece::QUEEN,
+                        'k' => Piece::KING,
                         _ => return Err("Invalid FEN string"),
                     };
                     board[new_piece] |= singly_populated_bitboard;
@@ -108,12 +116,24 @@ impl Board {
         self.occupied_squares().not()
     }
 
-    pub fn switch_side(&mut self) {
+    fn switch_side(&mut self) {
         for bitboard in &mut self.pieces {
-            *bitboard = BitBoard::new(bitboard.0.reverse_bits())
+            *bitboard = bitboard.reverse()
         }
         let mut white_pieces = self[Color::WHITE]; // Happy borrow checker
         mem::swap(&mut white_pieces, &mut self[Color::BLACK]);
+
+        self.en_passant = self.en_passant.reverse();
+    }
+
+    #[inline]
+    pub fn en_passant_target_index(&self) -> usize {
+        64usize - (self.en_passant >> 32).0.leading_zeros() as usize
+    }
+
+    #[inline]
+    pub fn en_passant_square(&self) -> Square {
+        self.en_passant.as_square()
     }
 }
 
@@ -146,6 +166,11 @@ impl BitBoard {
         let singly_populated_bitboard = self.0 & self.0.overflowing_neg().0;
         self.0 ^= singly_populated_bitboard;
         BitBoard(singly_populated_bitboard)
+    }
+
+    #[inline]
+    pub fn reverse(self) -> Self {
+        BitBoard(self.0.reverse_bits())
     }
 }
 
@@ -208,12 +233,12 @@ impl FusedIterator for BitBoard {}
 
 impl fmt::Debug for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self[Pieces::PAWN])?;
-        write!(f, "{:?}", self[Pieces::KNIGHT])?;
-        write!(f, "{:?}", self[Pieces::BISHOP])?;
-        write!(f, "{:?}", self[Pieces::ROOK])?;
-        write!(f, "{:?}", self[Pieces::QUEEN])?;
-        write!(f, "{:?}", self[Pieces::KING])?;
+        write!(f, "{:?}", self[Piece::PAWN])?;
+        write!(f, "{:?}", self[Piece::KNIGHT])?;
+        write!(f, "{:?}", self[Piece::BISHOP])?;
+        write!(f, "{:?}", self[Piece::ROOK])?;
+        write!(f, "{:?}", self[Piece::QUEEN])?;
+        write!(f, "{:?}", self[Piece::KING])?;
         write!(f, "{:?}", self[Color::WHITE])?;
         write!(f, "{:?}", self[Color::BLACK])
     }

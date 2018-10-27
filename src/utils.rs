@@ -34,26 +34,30 @@ pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
+// We declare knights to queen first to use the value directly in promotion code in move encoding
 #[derive(Copy, Clone)]
-pub enum Pieces {
-    PAWN = 0,
-    KNIGHT,
+pub enum Piece {
+    KNIGHT = 0,
     BISHOP,
     ROOK,
     QUEEN,
+
+    PAWN,
     KING,
 }
 
-impl Index<Pieces> for Board {
+pub static AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
+
+impl Index<Piece> for Board {
     type Output = BitBoard;
 
-    fn index(&self, piece: Pieces) -> &Self::Output {
+    fn index(&self, piece: Piece) -> &Self::Output {
         &self.pieces[piece as usize]
     }
 }
 
-impl IndexMut<Pieces> for Board {
-    fn index_mut(&mut self, piece: Pieces) -> &mut BitBoard {
+impl IndexMut<Piece> for Board {
+    fn index_mut(&mut self, piece: Piece) -> &mut BitBoard {
         &mut self.pieces[piece as usize]
     }
 }

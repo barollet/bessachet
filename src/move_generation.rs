@@ -65,18 +65,33 @@ fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
 
 static KNIGHT_ATTACK_TABLE: [BitBoard; 64] = knight_attack_table(); // 512 bytes
 
+// returns the bitboards of the pawns that can take the pawn in index (starting from LSB)
+static EN_PASSANT_TABLE: [BitBoard; 9] = en_passant_table(); // 72 bytes 64 + 8 for no en passant target
+
 // Moves iterator
 pub struct Move(u16);
 
 impl Move {
     // Returns a new move with the initial and destination squares
-    fn new_from_to(from: Square, to: Square) -> Self {
+    fn new_quiet_move(from: Square, to: Square) -> Self {
         Move(u16::from(from.0) + (u16::from(to.0) << 6))
     }
 
+    fn new_capture_move(from: Square, to: Square, capture: bool) -> Self {
+        Self::new_quiet_move(from, to).set_capture(capture)
+    }
+
+    fn set_promotion(self, promotion: Piece) -> Self {
+        Move(self.0 + 0x8000 + (promotion as u16) << 12)
+    }
+
+    fn set_capture(self, capture: bool) -> Self {
+        Move(self.0 + 0x4000 * u16::from(capture))
+    }
+
     // Helper to get an iterator over promotions
-    fn from_to_with_promotion(from: Square, to: Square) -> impl Iterator <Item = Move> {
-        // TODO
+    fn promotion_move_iterator(from: Square, to: Square, capture: bool) -> impl Iterator <Item = Move> {
+        AVAILABLE_PROMOTION.iter().map(move |piece| Move::new_capture_move(from, to, capture).set_promotion(*piece))
     }
 
     fn initial_square(&self) -> Square {
@@ -89,20 +104,21 @@ impl Move {
 }
 
 impl Board {
+
     // Returns the basic pawn pushs without promotion
     pub fn simple_pawn_pushs(&self) -> impl Iterator <Item = Move> {
         // basic pawns are pawns that won't promote (ie not on the last line)
-        let basic_pawns = self[Pieces::PAWN] & self[Color::WHITE] & !ROW_7;
+        let basic_pawns = self[Piece::PAWN] & self[Color::WHITE] & !ROW_7;
         let simple_pushed_pawns = (basic_pawns << 8) & self.empty_squares();
 
         simple_pushed_pawns.map(|bitboard|
-                                Move::new_from_to((bitboard >> 8).as_square(),
+                                Move::new_quiet_move((bitboard >> 8).as_square(),
                                                   bitboard.as_square()))
     }
 
     // Returns the pawns that can do the initial double pushs
     pub fn double_pawn_pushs(&self) -> impl Iterator <Item = Move> {
-        let starting_pawns = self[Pieces::PAWN] & self[Color::WHITE] & ROW_2;
+        let starting_pawns = self[Piece::PAWN] & self[Color::WHITE] & ROW_2;
 
         // To be double pushed, the pawns have to be able to move once forward
         let simple_pushed_pawns = (starting_pawns << 8) & self.empty_squares();
@@ -110,53 +126,67 @@ impl Board {
         let double_pushed_pawns = (simple_pushed_pawns << 8) & self.empty_squares();
 
         double_pushed_pawns.map(|bitboard|
-                                Move::new_from_to((bitboard >> 16).as_square(),
+                                Move::new_quiet_move((bitboard >> 16).as_square(),
                                                   bitboard.as_square()))
     }
 
     pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> {
-        let basic_pawns = self[Pieces::PAWN] & self[Color::WHITE] & !ROW_7;
+        let basic_pawns = self[Piece::PAWN] & self[Color::WHITE] & !ROW_7;
         // left white capture
         let left_capture_iterator = ((basic_pawns & !FILE_A) << 7 & self.empty_squares())
-            .map(|bitboard| Move::new_from_to((bitboard >> 7).as_square(), bitboard.as_square()));
+            .map(|bitboard| Move::new_quiet_move((bitboard >> 7).as_square(), bitboard.as_square()));
         // right white capture
         let right_capture_iterator = ((basic_pawns & !FILE_H) << 9 & self.empty_squares())
-            .map(|bitboard| Move::new_from_to((bitboard >> 9).as_square(), bitboard.as_square()));
+            .map(|bitboard| Move::new_quiet_move((bitboard >> 9).as_square(), bitboard.as_square()));
         left_capture_iterator.chain(right_capture_iterator)
     }
-    // TODO Pawn push with promotion
+
+    // TODO remove duplicates with the code without promotion
     pub fn pawn_promotion_moves(&self) -> impl Iterator <Item = Move> {
-        let promoting_pawns = self[Pieces::PAWN] & self[Color::WHITE] & ROW_7;
+        let promoting_pawns = self[Piece::PAWN] & self[Color::WHITE] & ROW_7;
         // push
-        let push_promotion_iterator = (promoting_pawns << 8) & self.empty_squares()
+        let push_promotion_iterator = ((promoting_pawns << 8) & self.empty_squares())
+            .flat_map(|bitboard| Move::promotion_move_iterator((bitboard >> 8).as_square(), bitboard.as_square(), false));
         // catpure
+        // left
+        let left_capture_iterator = ((promoting_pawns & !FILE_A) << 7 & self.empty_squares())
+            .flat_map(|bitboard| Move::promotion_move_iterator((bitboard >> 7).as_square(), bitboard.as_square(), true));
+        // right
+        let right_capture_iterator = ((promoting_pawns & !FILE_H) << 9 & self.empty_squares())
+            .flat_map(|bitboard| Move::promotion_move_iterator((bitboard >> 9).as_square(), bitboard.as_square(), true));
+
+        push_promotion_iterator.chain(left_capture_iterator).chain(right_capture_iterator)
     }
-    //
-    // TODO Pawn en passant
+
+    // TODO change Move metadata to en passant capture
+    pub fn en_passant_captures(&self) -> impl Iterator <Item = Move> + '_ {
+        (EN_PASSANT_TABLE[self.en_passant_target_index()] & self[Piece::PAWN])
+            .map(move |bitboard| Move::new_capture_move(bitboard.as_square(), self.en_passant_square(), true))
+    }
 
     pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Pieces::KNIGHT] & self[Color::WHITE])
+        (self[Piece::KNIGHT] & self[Color::WHITE])
             .flat_map(move |knight| (KNIGHT_ATTACK_TABLE[knight.as_index()] & !self[Color::WHITE])
-                      .map(move |bitboard| Move::new_from_to(knight.as_square(), bitboard.as_square())))
+                      .map(move |bitboard| Move::new_quiet_move(knight.as_square(), bitboard.as_square())))
     }
 
     // TODO redo this with quiet moves and capture moves distinction
     fn sliding_attack(&self, piece: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
         (piece_attack(piece.as_square(), self.occupied_squares()) & !self[Color::WHITE])
-            .map(move |bitboard| Move::new_from_to(piece.as_square(), bitboard.as_square()))
+            .map(move |bitboard| Move::new_quiet_move(piece.as_square(), bitboard.as_square()))
     }
 
     pub fn bishop_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Pieces::BISHOP] & self[Color::WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+        (self[Piece::BISHOP] & self[Color::WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
     }
 
     pub fn rook_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Pieces::ROOK] & self[Color::WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
+        (self[Piece::ROOK] & self[Color::WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
     }
 
     pub fn queen_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Pieces::QUEEN] & self[Color::WHITE]).flat_map(move |queen| self.sliding_attack(queen, bishop_attack)
-                                                                                    .chain(self.sliding_attack(queen, rook_attack)))
+        (self[Piece::QUEEN] & self[Color::WHITE]).flat_map(move |queen| self.sliding_attack(queen, bishop_attack)
+                                                           .chain(self.sliding_attack(queen, rook_attack)))
     }
 
     // TODO king
@@ -170,6 +200,21 @@ impl fmt::Debug for Move {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Move {} {}", self.initial_square(), self.destination_square())
     }
+}
+
+#[allow(clippy::unreadable_literal)]
+const fn en_passant_table() -> [BitBoard; 9] {
+    [
+        BitBoard::empty(), // No en passant target
+        BitBoard::new(0x0200000000),
+        BitBoard::new(0x0500000000),
+        BitBoard::new(0x0a00000000),
+        BitBoard::new(0x1400000000),
+        BitBoard::new(0x2800000000),
+        BitBoard::new(0x5000000000),
+        BitBoard::new(0xa000000000),
+        BitBoard::new(0x4000000000),
+    ]
 }
 
 #[allow(clippy::unreadable_literal)]
