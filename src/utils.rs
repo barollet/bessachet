@@ -34,6 +34,11 @@ pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
+pub const WHITE_KING_STARTING_SQUARE: Square = Square::new(3);
+
+pub const WHITE_KING_CASTLE_DEST_SQUARE: BitBoard = BitBoard::new(0x1);
+pub const WHITE_QUEEN_CASTLE_DEST_SQUARE: BitBoard = BitBoard::new(0x20);
+
 // We declare knights to queen first to use the value directly in promotion code in move encoding
 #[derive(Copy, Clone)]
 pub enum Piece {
@@ -67,16 +72,22 @@ pub struct Square(pub u8);
 
 impl Square {
     #[inline]
-    pub fn new(square: u8) -> Self {
+    pub const fn new(square: u8) -> Self {
         Square(square)
     }
 
     // Creates a square from file and rank between 0 and 7
     #[inline]
-    pub fn from_file_rank(file: u8, rank: u8) -> Self {
+    pub const fn from_file_rank(file: u8, rank: u8) -> Self {
         Square(8*rank + (7-file))
     }
     
+    // Creates a square from file and rank between 0 and 7
+    #[inline]
+    pub const fn from_char_rank_file(file: char, rank: char) -> Self {
+        Self::from_file_rank(file as u8 - b'a', rank as u8 - b'1')
+    }
+
     // Returns the rank between 0 and 7
     #[inline]
     pub fn rank(self) -> u8 {

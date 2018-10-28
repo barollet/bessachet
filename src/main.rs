@@ -9,6 +9,7 @@ pub use board::Board;
 pub use utils::*;
 
 use move_generation::init_magic_tables;
+use move_generation::generate_king_attacks;
 
 fn main() {
     init_magic_tables();
@@ -39,5 +40,6 @@ fn main() {
 
     //let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
     //println!("{:?}", board);
+    generate_king_attacks();
 }
 

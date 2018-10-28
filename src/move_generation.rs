@@ -12,7 +12,7 @@ use utils::*;
 // this is a black magic fancy table with shared attacks
 // See: https://www.chessprogramming.org/Magic_Bitboards
 //
-// This table is computed at runtime not to make the executable table too big
+// This table is computed at runtime not to make the binary executable too big
 // hence the mut keyword
 static mut SLIDING_ATTACK_TABLE: [u64; 50866] = [0; 50866]; // 406928 bytes
 
@@ -64,6 +64,7 @@ fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
 }
 
 static KNIGHT_ATTACK_TABLE: [BitBoard; 64] = knight_attack_table(); // 512 bytes
+static KING_ATTACK_TABLE: [BitBoard; 64] = king_attack_table(); // 512 bytes
 
 // returns the bitboards of the pawns that can take the pawn in index (starting from LSB)
 static EN_PASSANT_TABLE: [BitBoard; 9] = en_passant_table(); // 72 bytes 64 + 8 for no en passant target
@@ -82,7 +83,7 @@ impl Move {
     }
 
     fn set_promotion(self, promotion: Piece) -> Self {
-        Move(self.0 + 0x8000 + (promotion as u16) << 12)
+        Move(self.0 + 0x8000 + ((promotion as u16) << 12))
     }
 
     fn set_capture(self, capture: bool) -> Self {
@@ -189,8 +190,16 @@ impl Board {
                                                            .chain(self.sliding_attack(queen, rook_attack)))
     }
 
-    // TODO king
-    // TODO castle
+    pub fn king_moves(&self) -> impl Iterator <Item = Move> + '_ {
+        (self[Piece::KING] & self[Color::WHITE])
+            .flat_map(move |king| (KING_ATTACK_TABLE[king.as_index()] & !self[Color::WHITE])
+                      .map(move |bitboard| Move::new_quiet_move(king.as_square(), bitboard.as_square())))
+    }
+
+    // Castling moves are only encoding the king move
+    pub fn castling(&self) -> impl Iterator <Item= Move> + '_ {
+        (self.king_castling() | self.queen_castling()).map(|bitboard| Move::new_quiet_move(WHITE_KING_STARTING_SQUARE, bitboard.as_square()))
+    }
 }
 
 
@@ -284,7 +293,78 @@ const fn knight_attack_table() -> [BitBoard; 64] {
         BitBoard::new(0x88500000000000),
         BitBoard::new(0x10a00000000000),
         BitBoard::new(0x20400000000000),
-        ]
+    ]
+}
+
+
+#[allow(clippy::unreadable_literal)]
+const fn king_attack_table() -> [BitBoard; 64] {
+    [
+        BitBoard::new(0x302),
+        BitBoard::new(0x705),
+        BitBoard::new(0xe0a),
+        BitBoard::new(0x1c14),
+        BitBoard::new(0x3828),
+        BitBoard::new(0x7050),
+        BitBoard::new(0xe0a0),
+        BitBoard::new(0xc040),
+        BitBoard::new(0x30203),
+        BitBoard::new(0x70507),
+        BitBoard::new(0xe0a0e),
+        BitBoard::new(0x1c141c),
+        BitBoard::new(0x382838),
+        BitBoard::new(0x705070),
+        BitBoard::new(0xe0a0e0),
+        BitBoard::new(0xc040c0),
+        BitBoard::new(0x3020300),
+        BitBoard::new(0x7050700),
+        BitBoard::new(0xe0a0e00),
+        BitBoard::new(0x1c141c00),
+        BitBoard::new(0x38283800),
+        BitBoard::new(0x70507000),
+        BitBoard::new(0xe0a0e000),
+        BitBoard::new(0xc040c000),
+        BitBoard::new(0x302030000),
+        BitBoard::new(0x705070000),
+        BitBoard::new(0xe0a0e0000),
+        BitBoard::new(0x1c141c0000),
+        BitBoard::new(0x3828380000),
+        BitBoard::new(0x7050700000),
+        BitBoard::new(0xe0a0e00000),
+        BitBoard::new(0xc040c00000),
+        BitBoard::new(0x30203000000),
+        BitBoard::new(0x70507000000),
+        BitBoard::new(0xe0a0e000000),
+        BitBoard::new(0x1c141c000000),
+        BitBoard::new(0x382838000000),
+        BitBoard::new(0x705070000000),
+        BitBoard::new(0xe0a0e0000000),
+        BitBoard::new(0xc040c0000000),
+        BitBoard::new(0x3020300000000),
+        BitBoard::new(0x7050700000000),
+        BitBoard::new(0xe0a0e00000000),
+        BitBoard::new(0x1c141c00000000),
+        BitBoard::new(0x38283800000000),
+        BitBoard::new(0x70507000000000),
+        BitBoard::new(0xe0a0e000000000),
+        BitBoard::new(0xc040c000000000),
+        BitBoard::new(0x302030000000000),
+        BitBoard::new(0x705070000000000),
+        BitBoard::new(0xe0a0e0000000000),
+        BitBoard::new(0x1c141c0000000000),
+        BitBoard::new(0x3828380000000000),
+        BitBoard::new(0x7050700000000000),
+        BitBoard::new(0xe0a0e00000000000),
+        BitBoard::new(0xc040c00000000000),
+        BitBoard::new(0x203000000000000),
+        BitBoard::new(0x507000000000000),
+        BitBoard::new(0xa0e000000000000),
+        BitBoard::new(0x141c000000000000),
+        BitBoard::new(0x2838000000000000),
+        BitBoard::new(0x5070000000000000),
+        BitBoard::new(0xa0e0000000000000),
+        BitBoard::new(0x40c0000000000000),
+    ]
 }
 
 // Prints the knight attack table
@@ -307,6 +387,30 @@ pub fn generate_knight_attacks() {
     }
 
     for b in knight_attacks.iter() {
+        println!("BitBoard::new(0x{:x}),", b.0);
+    }
+}
+
+#[allow(dead_code)]
+pub fn generate_king_attacks() {
+    let mut king_attacks = [BitBoard::empty(); 64];
+
+    let king_moves = [(1, 1), (1, 0), (1, -1),
+                      (0, 1), (0, -1),
+                      (-1, 1), (-1, 0), (-1, -1)];
+
+    for (attack_bitboard, sq) in king_attacks.iter_mut().zip(0u8..) {
+        let (rank, file) = Square(sq).rank_file();
+        let (rank, file) = (rank as i8, file as i8);
+
+        for (i, j) in &king_moves {
+            if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
+                *attack_bitboard |= Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
+            }
+        }
+    }
+
+    for b in king_attacks.iter() {
         println!("BitBoard::new(0x{:x}),", b.0);
     }
 }

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::iter::FusedIterator;
 use std::mem;
-use std::ops::{BitAnd, BitOr, BitOrAssign, Not, Shl, Shr};
+use std::ops::{BitAnd, BitOr, BitOrAssign, Not, Shl, Shr, Mul};
 
 use utils::*;
 
@@ -20,12 +20,14 @@ use utils::*;
 
 // public attributes are for move generation
 // they are not supposed to be publicly accessed somewhere else
+// We don't mind if the board is not super dense because we will only clone it a few times
 #[derive(Clone)]
 pub struct Board {
     pub pieces: [BitBoard; 6],
     pub occupancy: [BitBoard; 2], // black pieces first
 
     en_passant: BitBoard, // position of an en passant target (0 otherwise)
+    castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order than FEN notation when white plays)
 }
 
 impl Board {
@@ -46,6 +48,7 @@ impl Board {
                         BitBoard::new(0x000000000000ffff)], // White
 
             en_passant: BitBoard::empty(),
+            castling_rights: 0xf,
         }
     }
 
@@ -55,14 +58,16 @@ impl Board {
             occupancy: [BitBoard::new(0); 2],
 
             en_passant: BitBoard::empty(),
+            castling_rights: 0,
         }
     }
 
+    // TODO clean parser
     pub fn from_fen(fen_string: &str) -> Result<Self, &'static str> {
         let mut board = Board::empty_board();
 
         let fen_parts: Vec<_> = fen_string.split_whitespace().collect();
-        if fen_parts.len() != 4 {
+        if fen_parts.len() < 4 || fen_parts.len() > 6 {
             return Err("Invalid FEN string");
         }
 
@@ -101,7 +106,24 @@ impl Board {
         }
 
         // Setting metadata
-        // TODO
+
+        // En passant
+        if fen_parts[3].len() == 2 {
+            let chars: Vec<_> = fen_parts[3].chars().collect();
+            board.en_passant = Square::from_char_rank_file(chars[0], chars[1]).as_bitboard();
+        }
+        // castling
+        if fen_parts[2] != "-" {
+            for c in fen_parts[2].chars() {
+                board.castling_rights |= match c {
+                    'K' => 0x1,
+                    'Q' => 0x2,
+                    'k' => 0x4,
+                    'q' => 0x8,
+                    _ => return Err("Invalid FEN string"),
+                }
+            }
+        }
 
         Ok(board)
     }
@@ -124,6 +146,7 @@ impl Board {
         mem::swap(&mut white_pieces, &mut self[Color::BLACK]);
 
         self.en_passant = self.en_passant.reverse();
+        self.castling_rights = ((self.castling_rights << 2) + (self.castling_rights >> 2)) & 0xf;
     }
 
     #[inline]
@@ -134,6 +157,16 @@ impl Board {
     #[inline]
     pub fn en_passant_square(&self) -> Square {
         self.en_passant.as_square()
+    }
+
+    #[inline]
+    pub fn king_castling(&self) -> BitBoard {
+        WHITE_KING_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x1)
+    }
+
+    #[inline]
+    pub fn queen_castling(&self) -> BitBoard {
+        WHITE_QUEEN_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x2)
     }
 }
 
@@ -226,6 +259,13 @@ impl Shr<u32> for BitBoard {
     type Output = Self;
     fn shr(self, rhs: u32) -> Self {
         BitBoard::new(self.0 >> rhs)
+    }
+}
+
+impl Mul<u64> for BitBoard {
+    type Output = Self;
+    fn mul(self, rhs: u64) -> Self {
+        BitBoard::new(self.0 * rhs)
     }
 }
 
