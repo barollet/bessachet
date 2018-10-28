@@ -52,6 +52,7 @@ pub enum Piece {
 }
 
 pub static AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
+pub static PIECES_LIST: [Piece; 6] = [ Piece::PAWN, Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN, Piece::KING ];
 
 impl Index<Piece> for Board {
     type Output = BitBoard;
@@ -108,6 +109,18 @@ impl Square {
     #[inline]
     pub fn as_bitboard(self) -> BitBoard {
         BitBoard::new(1 << self.0)
+    }
+
+    pub fn as_index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl Index<Square> for Board {
+    type Output = Option<Piece>;
+
+    fn index(&self, square: Square) -> &Self::Output {
+        &self.board_88[square.as_index()]
     }
 }
 

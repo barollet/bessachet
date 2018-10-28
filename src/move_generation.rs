@@ -69,41 +69,85 @@ static KING_ATTACK_TABLE: [BitBoard; 64] = king_attack_table(); // 512 bytes
 // returns the bitboards of the pawns that can take the pawn in index (starting from LSB)
 static EN_PASSANT_TABLE: [BitBoard; 9] = en_passant_table(); // 72 bytes 64 + 8 for no en passant target
 
-// Moves iterator
-pub struct Move(u16);
+// A Move is a 32 bits word following more or the less the extended
+// representation in https://www.chessprogramming.org/Encoding_Moves
+// MSB -------------------------------------------------------- LSB
+// pc3 .. pc0 | prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
+// 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0 
+#[derive(Clone, Copy)]
+pub struct Move(u32);
 
 impl Move {
     // Returns a new move with the initial and destination squares
+    #[inline]
     fn new_quiet_move(from: Square, to: Square) -> Self {
-        Move(u16::from(from.0) + (u16::from(to.0) << 6))
+        Move(u32::from(from.0) + (u32::from(to.0) << 6))
     }
 
-    fn new_capture_move(from: Square, to: Square, capture: bool) -> Self {
-        Self::new_quiet_move(from, to).set_capture(capture)
+    #[inline]
+    fn new_capture_move(from: Square, to: Square, capture: Piece) -> Self {
+        Self::new_quiet_move(from, to)
+            .set_capture()
+            .set_captured_piece(capture)
     }
 
-    fn set_promotion(self, promotion: Piece) -> Self {
-        Move(self.0 + 0x8000 + ((promotion as u16) << 12))
+    #[inline]
+    fn en_passant(self) -> Self {
+        Move(self.0).set_sp(1)
     }
 
-    fn set_capture(self, capture: bool) -> Self {
-        Move(self.0 + 0x4000 * u16::from(capture))
+    #[inline]
+    fn double_push(self) -> Self {
+        Move(self.0).set_sp(1)
+    }
+
+    #[inline]
+    fn king_castle(self) -> Self {
+        Move(self.0).set_sp(2)
+    }
+
+    #[inline]
+    fn queen_castle(self) -> Self {
+        Move(self.0).set_sp(3)
     }
 
     // Helper to get an iterator over promotions
-    fn promotion_move_iterator(from: Square, to: Square, capture: bool) -> impl Iterator <Item = Move> {
-        AVAILABLE_PROMOTION.iter().map(move |piece| Move::new_capture_move(from, to, capture).set_promotion(*piece))
+    #[inline]
+    fn promotion_move_iterator(self) -> impl Iterator <Item = Move> {
+        AVAILABLE_PROMOTION.iter().map(move |piece| self.set_promotion(*piece))
     }
 
+    #[inline]
+    fn set_promotion(self, promotion: Piece) -> Self {
+        Move(self.0 + 0x8000 + ((promotion as u32) << 12))
+    }
+
+    #[inline]
+    fn set_capture(self) -> Self {
+        Move(self.0 + 0x4000)
+    }
+
+    #[inline]
+    fn set_captured_piece(self, piece: Piece) -> Self {
+        Move(self.0 | ((piece as u32 & 0xf) << 16))
+    }
+
+    fn set_sp(self, special_code: u32) -> Self {
+        Move(self.0 | ((special_code & 0x3) << 12))
+    }
+
+    #[inline]
     fn initial_square(&self) -> Square {
         Square::new((self.0 & 0x3f) as u8)
     }
 
+    #[inline]
     fn destination_square(&self) -> Square {
         Square::new((self.0 >> 6) as u8 & 0x3f)
     }
 }
 
+// Moves iterator
 impl Board {
 
     // Returns the basic pawn pushs without promotion
@@ -128,7 +172,8 @@ impl Board {
 
         double_pushed_pawns.map(|bitboard|
                                 Move::new_quiet_move((bitboard >> 16).as_square(),
-                                                  bitboard.as_square()))
+                                                  bitboard.as_square())
+                                .double_push())
     }
 
     pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> {
@@ -143,26 +188,25 @@ impl Board {
     }
 
     // TODO remove duplicates with the code without promotion
-    pub fn pawn_promotion_moves(&self) -> impl Iterator <Item = Move> {
+    pub fn pawn_promotion_moves(&self) -> impl Iterator <Item = Move> + '_ {
         let promoting_pawns = self[Piece::PAWN] & self[Color::WHITE] & ROW_7;
         // push
         let push_promotion_iterator = ((promoting_pawns << 8) & self.empty_squares())
-            .flat_map(|bitboard| Move::promotion_move_iterator((bitboard >> 8).as_square(), bitboard.as_square(), false));
+            .map(|bitboard| Move::new_quiet_move((bitboard >> 8).as_square(), bitboard.as_square()));
         // catpure
         // left
         let left_capture_iterator = ((promoting_pawns & !FILE_A) << 7 & self.empty_squares())
-            .flat_map(|bitboard| Move::promotion_move_iterator((bitboard >> 7).as_square(), bitboard.as_square(), true));
+            .map(move |bitboard| Move::new_capture_move((bitboard >> 7).as_square(), bitboard.as_square(), self[bitboard.as_square()].unwrap()));
         // right
         let right_capture_iterator = ((promoting_pawns & !FILE_H) << 9 & self.empty_squares())
-            .flat_map(|bitboard| Move::promotion_move_iterator((bitboard >> 9).as_square(), bitboard.as_square(), true));
+            .map(move |bitboard| Move::new_capture_move((bitboard >> 9).as_square(), bitboard.as_square(), self[bitboard.as_square()].unwrap()));
 
-        push_promotion_iterator.chain(left_capture_iterator).chain(right_capture_iterator)
+        push_promotion_iterator.chain(left_capture_iterator).chain(right_capture_iterator).flat_map(|mov| mov.promotion_move_iterator())
     }
 
-    // TODO change Move metadata to en passant capture
     pub fn en_passant_captures(&self) -> impl Iterator <Item = Move> + '_ {
         (EN_PASSANT_TABLE[self.en_passant_target_index()] & self[Piece::PAWN])
-            .map(move |bitboard| Move::new_capture_move(bitboard.as_square(), self.en_passant_square(), true))
+            .map(move |bitboard| Move::new_capture_move(bitboard.as_square(), self.en_passant_square(), Piece::PAWN).en_passant())
     }
 
     pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {

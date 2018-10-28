@@ -9,12 +9,13 @@ pub use board::Board;
 pub use utils::*;
 
 use move_generation::init_magic_tables;
-use move_generation::generate_king_attacks;
 
 fn main() {
     init_magic_tables();
 
     println!("board size {}", std::mem::size_of::<Board>());
+    println!("board size {}", std::mem::size_of::<Piece>());
+    println!("board size {}", std::mem::size_of::<Option<Piece>>());
 
     let board = Board::initial_position();
 
@@ -40,6 +41,5 @@ fn main() {
 
     //let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
     //println!("{:?}", board);
-    generate_king_attacks();
 }
 

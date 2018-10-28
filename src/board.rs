@@ -5,6 +5,8 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, Not, Shl, Shr, Mul};
 
 use utils::*;
 
+use move_generation::Move;
+
 // The board is represented as a set of bitboards
 // See: https://www.chessprogramming.org/Bitboards
 
@@ -28,6 +30,8 @@ pub struct Board {
 
     en_passant: BitBoard, // position of an en passant target (0 otherwise)
     castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order than FEN notation when white plays)
+
+    pub board_88: [Option<Piece>; 64],
 }
 
 impl Board {
@@ -35,7 +39,7 @@ impl Board {
     #![allow(clippy::unreadable_literal)]
     pub fn initial_position() -> Self {
         // See utils.rs for the piece order in the array
-        Board {
+        let mut board = Board {
             pieces:    [BitBoard::new(0x4200000000000042),  // Knights
                         BitBoard::new(0x2400000000000024),  // Bishops
                         BitBoard::new(0x8100000000000081),  // Rooks
@@ -49,7 +53,13 @@ impl Board {
 
             en_passant: BitBoard::empty(),
             castling_rights: 0xf,
-        }
+
+            board_88: [None; 64],
+        };
+
+        board.fill_88();
+
+        board
     }
 
     fn empty_board() -> Self {
@@ -59,6 +69,27 @@ impl Board {
 
             en_passant: BitBoard::empty(),
             castling_rights: 0,
+
+            board_88: [None; 64],
+        }
+    }
+
+    pub fn make(&mut self, mov: Move) {
+        // Move the piece
+        // Capture
+        // Castling
+    }
+
+    pub fn unmake(&mut self, mov: Move) {
+
+    }
+
+    // Fills the redondant 88 representation from the bitboards representation
+    fn fill_88(&mut self) {
+        for piece in &PIECES_LIST {
+            for square in self[*piece] {
+                self.board_88[square.as_index()] = Some(*piece);
+            }
         }
     }
 
@@ -125,6 +156,8 @@ impl Board {
             }
         }
 
+        board.fill_88();
+
         Ok(board)
     }
 
@@ -147,6 +180,11 @@ impl Board {
 
         self.en_passant = self.en_passant.reverse();
         self.castling_rights = ((self.castling_rights << 2) + (self.castling_rights >> 2)) & 0xf;
+
+        for (id_end, id_beg) in (32..64).rev().zip(0..) {
+            let mut beg = self.board_88[id_beg];
+            mem::swap(&mut beg, &mut self.board_88[id_end]);
+        }
     }
 
     #[inline]
