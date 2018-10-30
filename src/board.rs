@@ -1,7 +1,7 @@
 use std::fmt;
 use std::iter::FusedIterator;
 use std::mem;
-use std::ops::{BitAnd, BitOr, BitOrAssign, Not, Shl, Shr, Mul};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Shl, Shr, Mul};
 
 use utils::*;
 
@@ -11,8 +11,8 @@ use move_generation::Move;
 // See: https://www.chessprogramming.org/Bitboards
 
 // LSB is the square lower-right and the MSB is the upper-left one.
-// 63 62 61 60 59 58 57 56      black pawns
-// 55 54 53 52 51 50 49 48      black pieces
+// 63 62 61 60 59 58 57 56      black pieces
+// 55 54 53 52 51 50 49 48      black pawns
 // 47 46 45 44 43 42 41 40
 // 39 38 37 36 35 34 33 32
 // 31 30 29 28 27 26 25 24
@@ -74,14 +74,57 @@ impl Board {
         }
     }
 
+    // For make and unmake, we assume that the provided move is valid
+    // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, mov: Move) {
         // Move the piece
-        // Capture
-        // Castling
+        let moved_piece = self[mov.initial_square()].unwrap();
+
+        self.move_piece(mov.initial_square(), mov.destination_square(), moved_piece);
+
+        // Capture TODO en passant
+        if let Some(captured_piece) = mov.captured_piece() {
+            self[captured_piece] &= !mov.initial_square().as_bitboard();
+            self[Color::BLACK] &= !mov.initial_square().as_bitboard();
+        }
+        // Castling, move the other rook
+        if let Some((rook_from_square, rook_dest_square)) = mov.castle_rook() {
+            self.move_piece(rook_from_square, rook_dest_square, Piece::ROOK);
+        }
+        // Double pawn push, set the en passant target
+        self.en_passant = mov.get_en_passant_target();
+        // Promotion
     }
 
     pub fn unmake(&mut self, mov: Move) {
+        // Move the piece back
+        let moved_piece = self[mov.destination_square()].unwrap();
 
+        self.move_piece(mov.destination_square(), mov.initial_square(), moved_piece);
+
+        // Capture
+        if let Some(captured_piece) = mov.captured_piece() {
+            self[captured_piece] |= mov.destination_square().as_bitboard();
+            self[Color::BLACK] |= mov.destination_square().as_bitboard();
+        }
+        // Castling
+        // En passant
+        // Promotion
+    }
+
+    fn move_piece(&mut self, from: Square, to: Square, moved_piece: Piece) {
+        let reset_mask = !from.as_bitboard();
+        let set_mask = to.as_bitboard();
+
+        // Unset the previous square
+        self[moved_piece] &= reset_mask;
+        self[Color::WHITE] &= reset_mask;
+        self[from] = None;
+
+        // Set the new square
+        self[moved_piece] |= set_mask;
+        self[Color::WHITE] |= set_mask;
+        self[to] = Some(moved_piece);
     }
 
     // Fills the redondant 88 representation from the bitboards representation
@@ -263,6 +306,12 @@ impl BitAnd for BitBoard {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {
         BitBoard::new(self.0 & rhs.0)
+    }
+}
+
+impl BitAndAssign for BitBoard {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
     }
 }
 

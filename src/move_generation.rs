@@ -7,6 +7,10 @@ use self::init_magic::get_fixed_offset;
 use board::{Board, BitBoard};
 
 use utils::*;
+use enum_primitive::FromPrimitive;
+
+// Legal move generator
+
 
 // unsafe attack table for rooks, bishops and queens
 // this is a black magic fancy table with shared attacks
@@ -73,7 +77,7 @@ static EN_PASSANT_TABLE: [BitBoard; 9] = en_passant_table(); // 72 bytes 64 + 8 
 // representation in https://www.chessprogramming.org/Encoding_Moves
 // MSB -------------------------------------------------------- LSB
 // pc3 .. pc0 | prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
-// 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0 
+// 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
 #[derive(Clone, Copy)]
 pub struct Move(u32);
 
@@ -132,17 +136,62 @@ impl Move {
         Move(self.0 | ((piece as u32 & 0xf) << 16))
     }
 
+    // Returns the captured piece if any (doesnt include en passant)
+    #[inline]
+    pub fn captured_piece(self) -> Option<Piece> {
+        if self.0 & 0x4000 != 0 && self.0 & !0x5000 != 0 { // if the capture is not an en passant capture
+            // from_u32 returns an Option<Piece> depending if the piece is valid or not
+            Piece::from_u32(self.0 >> 16)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn is_promotion(self) -> bool {
+        self.0 & 0xa000 != 0
+    }
+
+    // Returns the rook moves involved in the castle move
+    // TODO make it better
+    #[inline]
+    pub fn castle_rook(self) -> Option<(Square, Square)> {
+        if !self.is_promotion() {
+            let sp_val = self.get_sp();
+            if sp_val == 2 {
+                Some((WHITE_ROOK_KING_CASTLE_FROM_SQUARE, WHITE_ROOK_KING_CASTLE_DEST_SQUARE))
+            } else if sp_val == 3 {
+                Some((WHITE_ROOK_QUEEN_CASTLE_FROM_SQUARE, WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     fn set_sp(self, special_code: u32) -> Self {
         Move(self.0 | ((special_code & 0x3) << 12))
     }
 
     #[inline]
-    fn initial_square(&self) -> Square {
+    fn get_sp(self) -> u32 {
+        self.0 >> 12 & 0x3
+    }
+
+    #[inline]
+    pub fn get_en_passant_target(self) -> BitBoard {
+        self.destination_square().as_bitboard()
+    }
+
+    #[inline]
+    pub fn initial_square(&self) -> Square {
         Square::new((self.0 & 0x3f) as u8)
     }
 
     #[inline]
-    fn destination_square(&self) -> Square {
+    pub fn destination_square(&self) -> Square {
         Square::new((self.0 >> 6) as u8 & 0x3f)
     }
 }
@@ -206,7 +255,7 @@ impl Board {
 
     pub fn en_passant_captures(&self) -> impl Iterator <Item = Move> + '_ {
         (EN_PASSANT_TABLE[self.en_passant_target_index()] & self[Piece::PAWN])
-            .map(move |bitboard| Move::new_capture_move(bitboard.as_square(), self.en_passant_square(), Piece::PAWN).en_passant())
+            .map(move |bitboard| Move::new_quiet_move(bitboard.as_square(), self.en_passant_square()).set_capture().en_passant())
     }
 
     pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {
@@ -241,8 +290,27 @@ impl Board {
     }
 
     // Castling moves are only encoding the king move
-    pub fn castling(&self) -> impl Iterator <Item= Move> + '_ {
-        (self.king_castling() | self.queen_castling()).map(|bitboard| Move::new_quiet_move(WHITE_KING_STARTING_SQUARE, bitboard.as_square()))
+    pub fn castling(&self) -> impl Iterator <Item = Move> + '_ {
+        self.king_castling().map(|bitboard|
+                                 Move::new_quiet_move(WHITE_KING_STARTING_SQUARE, bitboard.as_square()).king_castle()
+        ).chain(self.queen_castling().map(|bitboard|
+                                          Move::new_quiet_move(WHITE_KING_STARTING_SQUARE, bitboard.as_square()).queen_castle())
+        )
+    }
+
+    // TODO change this with move ordering
+    pub fn possible_moves(&self) -> impl Iterator <Item = Move> + '_ {
+        self.simple_pawn_pushs()
+            .chain(self.double_pawn_pushs())
+            .chain(self.pawn_captures_without_promotion())
+            .chain(self.pawn_promotion_moves())
+            .chain(self.en_passant_captures())
+            .chain(self.knight_moves())
+            .chain(self.bishop_moves())
+            .chain(self.rook_moves())
+            .chain(self.queen_moves())
+            .chain(self.king_moves())
+            .chain(self.castling())
     }
 }
 

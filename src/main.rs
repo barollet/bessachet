@@ -1,12 +1,14 @@
 #![feature(reverse_bits)]
 
+#[macro_use] extern crate enum_primitive;
+
 mod board;
 mod move_generation;
 mod utils;
 
-pub use board::Board;
+use board::Board;
 
-pub use utils::*;
+use utils::*;
 
 use move_generation::init_magic_tables;
 
@@ -17,9 +19,15 @@ fn main() {
     println!("board size {}", std::mem::size_of::<Piece>());
     println!("board size {}", std::mem::size_of::<Option<Piece>>());
 
-    let board = Board::initial_position();
+    let mut board = Board::initial_position();
 
     for mov in board.knight_moves() {
+        println!("{:?}", mov);
+    }
+
+    let mov = board.knight_moves().next().unwrap();
+    board.make(mov);
+    for mov in board.possible_moves() {
         println!("{:?}", mov);
     }
     /*

@@ -10,6 +10,7 @@ pub const WHITE: usize = 1;
 pub const BLACK: usize = 0;
 */
 #[derive(Copy, Clone)]
+#[repr(u8)]
 pub enum Color {
     BLACK = 0,
     WHITE,
@@ -34,13 +35,23 @@ pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
-pub const WHITE_KING_STARTING_SQUARE: Square = Square::new(3);
 
-pub const WHITE_KING_CASTLE_DEST_SQUARE: BitBoard = BitBoard::new(0x1);
-pub const WHITE_QUEEN_CASTLE_DEST_SQUARE: BitBoard = BitBoard::new(0x20);
+// Those constants represent a single square but are used as bitboard so we convert them once and
+// for all
+pub const WHITE_KING_STARTING_SQUARE: Square = Square::from_char_rank_file('e', '1');
+
+pub const WHITE_KING_CASTLE_DEST_SQUARE: BitBoard = Square::from_char_rank_file('g', '1').as_bitboard();
+pub const WHITE_QUEEN_CASTLE_DEST_SQUARE: BitBoard = Square::from_char_rank_file('c', '1').as_bitboard();
+
+pub const WHITE_ROOK_KING_CASTLE_FROM_SQUARE: Square = Square::from_char_rank_file('h', '1');
+pub const WHITE_ROOK_KING_CASTLE_DEST_SQUARE: Square = Square::from_char_rank_file('f', '1');
+pub const WHITE_ROOK_QUEEN_CASTLE_FROM_SQUARE: Square = Square::from_char_rank_file('a', '1');
+pub const WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE: Square = Square::from_char_rank_file('d', '1');
 
 // We declare knights to queen first to use the value directly in promotion code in move encoding
+enum_from_primitive! {
 #[derive(Copy, Clone)]
+#[repr(u8)]
 pub enum Piece {
     KNIGHT = 0,
     BISHOP,
@@ -49,6 +60,7 @@ pub enum Piece {
 
     PAWN,
     KING,
+}
 }
 
 pub static AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
@@ -82,7 +94,7 @@ impl Square {
     pub const fn from_file_rank(file: u8, rank: u8) -> Self {
         Square(8*rank + (7-file))
     }
-    
+
     // Creates a square from file and rank between 0 and 7
     #[inline]
     pub const fn from_char_rank_file(file: char, rank: char) -> Self {
@@ -92,7 +104,7 @@ impl Square {
     // Returns the rank between 0 and 7
     #[inline]
     pub fn rank(self) -> u8 {
-        self.0 / 8 
+        self.0 / 8
     }
 
     // Returns the file between 0 and 7
@@ -107,7 +119,7 @@ impl Square {
     }
 
     #[inline]
-    pub fn as_bitboard(self) -> BitBoard {
+    pub const fn as_bitboard(self) -> BitBoard {
         BitBoard::new(1 << self.0)
     }
 
@@ -124,14 +136,20 @@ impl Index<Square> for Board {
     }
 }
 
+impl IndexMut<Square> for Board {
+    fn index_mut(&mut self, square: Square) -> &mut Option<Piece> {
+        &mut self.board_88[square.as_index()]
+    }
+}
+
 impl fmt::Debug for Square {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Square({}{:?} {:?})", char::from(b'a' + (7 - (self.0 % 8))), self.0 / 8 + 1, self.0)
-    } 
+    }
 }
 
 impl fmt::Display for Square {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}{:?}", char::from(b'a' + (7 - (self.0 % 8))), self.0 / 8 + 1)
-    } 
+    }
 }
