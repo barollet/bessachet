@@ -71,132 +71,187 @@ static KNIGHT_ATTACK_TABLE: [BitBoard; 64] = knight_attack_table(); // 512 bytes
 static KING_ATTACK_TABLE: [BitBoard; 64] = king_attack_table(); // 512 bytes
 
 // returns the bitboards of the pawns that can take the pawn in index (starting from LSB)
-static EN_PASSANT_TABLE: [BitBoard; 9] = en_passant_table(); // 72 bytes 64 + 8 for no en passant target
+static EN_PASSANT_TABLE: [BitBoard; 8] = en_passant_table(); // 64 bytes 8*8 bitboards
 
-// A Move is a 32 bits word following more or the less the extended
+// A Move is a 64 bits word following more or the less the extended
 // representation in https://www.chessprogramming.org/Encoding_Moves
 // MSB -------------------------------------------------------- LSB
+// latter   | ep5 .. ep0 | hf6 .. hf0 | csl3 .. csl0 | pc3 .. pc0
+// 63 .. 39 |  38 .. 32  |  31 .. 24  |  23  ..  20  | 19  ..  16
 // pc3 .. pc0 | prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
 // 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
 #[derive(Clone, Copy)]
-pub struct Move(u32);
+// TODO add all the irreversible metadata and implement PartialEq for only the 16 lowest bits
+pub struct Move(u64);
+
+const SPECIAL0_FLAG: u64 = 1 << 12;
+const SPECIAL1_FLAG: u64 = 1 << 13;
+const CAPTURE_FLAG: u64 = 1 << 14;
+const PROMOTION_FLAG: u64 = 1 << 15;
+
+const FLAGS_RANGE: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG | CAPTURE_FLAG | PROMOTION_FLAG;
+
+const DOUBLE_PUSH_FLAG: u64 = SPECIAL0_FLAG;
+const EN_PASSANT_CAPTURE_FLAG: u64 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
+
+const KING_CASTLE_FLAG: u64 = SPECIAL0_FLAG;
+const QUEEN_CASTLE_FLAG: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG;
+
+const KING_CASTLE_MOVE: Move = Move::raw_new(
+    Square::from_char_rank_file('e', '1'),
+    Square::from_char_rank_file('g', '1')
+).set_flags(KING_CASTLE_FLAG);
+
+const QUEEN_CASTLE_MOVE: Move = Move::raw_new(
+    Square::from_char_rank_file('e', '1'),
+    Square::from_char_rank_file('c', '1')
+).set_flags(QUEEN_CASTLE_FLAG);
+
+//const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
+
+pub const CASTLING_RIGHTS_BITS_OFFSET: u8 = 20;
+pub const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 24;
+pub const EN_PASSANT_SQUARE_BITS_OFFSET: u8 = 32;
+
+pub const CASTLING_RIGHTS_BITS_SIZE: u8 = 4;
+pub const HALFMOVE_CLOCK_BITS_SIZE: u8 = 7;
+pub const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
 
 impl Move {
-    // Returns a new move with the initial and destination squares
+    // Creates a simple move with no side effect
     #[inline]
-    fn new_quiet_move(from: Square, to: Square) -> Self {
-        Move(u32::from(from.0) + (u32::from(to.0) << 6))
+    fn quiet_move(from: Square, to: Square) -> Self {
+        Move(u64::from(from.0) + (u64::from(to.0) << 6))
     }
 
+    // Creates a move with all the specified flags
     #[inline]
-    fn new_capture_move(from: Square, to: Square, capture: Piece) -> Self {
-        Self::new_quiet_move(from, to)
-            .set_capture()
-            .set_captured_piece(capture)
+    fn tactical_move(from: Square, to: Square, flags: u64) -> Self {
+        Self::quiet_move(from, to).set_flags(flags)
     }
 
+    // This is supposed to be called only for constant compilation and not an runtime
     #[inline]
-    fn en_passant(self) -> Self {
-        Move(self.0).set_sp(1)
+    #[allow(clippy::cast_lossless)]
+    const fn raw_new(from: Square, to: Square) -> Self {
+        Move(from.0 as u64 + ((to.0 as u64) << 6))
     }
 
+    // Helper to set some flags to the move
     #[inline]
-    fn double_push(self) -> Self {
-        Move(self.0).set_sp(1)
+    const fn set_flags(self, flags: u64) -> Self {
+        Move(self.0 | flags)
     }
 
-    #[inline]
-    fn king_castle(self) -> Self {
-        Move(self.0).set_sp(2)
-    }
-
-    #[inline]
-    fn queen_castle(self) -> Self {
-        Move(self.0).set_sp(3)
-    }
-
-    // Helper to get an iterator over promotions
-    #[inline]
-    fn promotion_move_iterator(self) -> impl Iterator <Item = Move> {
-        AVAILABLE_PROMOTION.iter().map(move |piece| self.set_promotion(*piece))
-    }
-
-    #[inline]
-    fn set_promotion(self, promotion: Piece) -> Self {
-        Move(self.0 + 0x8000 + ((promotion as u32) << 12))
-    }
-
-    #[inline]
-    fn set_capture(self) -> Self {
-        Move(self.0 + 0x4000)
-    }
-
+    // Set the captured piece for unmaking routine
     #[inline]
     fn set_captured_piece(self, piece: Piece) -> Self {
-        Move(self.0 | ((piece as u32 & 0xf) << 16))
+        Move(self.0 | ((piece as u64 & 0xf) << 16))
     }
 
-    // Returns the captured piece if any (doesnt include en passant)
+    // Returns wether the move has the given flags set
     #[inline]
-    pub fn captured_piece(self) -> Option<Piece> {
-        if self.0 & 0x4000 != 0 && self.0 & !0x5000 != 0 { // if the capture is not an en passant capture
-            // from_u32 returns an Option<Piece> depending if the piece is valid or not
-            Piece::from_u32(self.0 >> 16)
-        } else {
-            None
-        }
+    fn has_flags(self, flags: u64) -> bool {
+        self.0 & flags != 0
     }
 
     #[inline]
-    fn is_promotion(self) -> bool {
-        self.0 & 0xa000 != 0
-    }
-
-    // Returns the rook moves involved in the castle move
-    // TODO make it better
-    #[inline]
-    pub fn castle_rook(self) -> Option<(Square, Square)> {
-        if !self.is_promotion() {
-            let sp_val = self.get_sp();
-            if sp_val == 2 {
-                Some((WHITE_ROOK_KING_CASTLE_FROM_SQUARE, WHITE_ROOK_KING_CASTLE_DEST_SQUARE))
-            } else if sp_val == 3 {
-                Some((WHITE_ROOK_QUEEN_CASTLE_FROM_SQUARE, WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+    fn has_exact_flags(self, flags: u64) -> bool {
+        self.0 & FLAGS_RANGE ^ flags == 0
     }
 
     #[inline]
-    fn set_sp(self, special_code: u32) -> Self {
-        Move(self.0 | ((special_code & 0x3) << 12))
+    fn set_promoted_piece(self, piece: Piece) -> Self {
+        Move(self.0 | (piece as u64 & 0b11) << 12)
+    }
+
+    // Helper iterator over the possible promotions
+    #[inline]
+    fn promotion_move_iterator(self) -> impl Iterator<Item = Move> {
+        AVAILABLE_PROMOTION.iter().map(move |promoted_piece| self.set_promoted_piece(*promoted_piece))
     }
 
     #[inline]
-    fn get_sp(self) -> u32 {
-        self.0 >> 12 & 0x3
+    // value has to have trailing zeros not to overwrite some other state
+    pub fn set_board_state(self, value: u8, state: u8) -> Self {
+        Move(self.0 | u64::from(value) << state)
     }
 
-    #[inline]
-    pub fn get_en_passant_target(self) -> BitBoard {
-        self.destination_square().as_bitboard()
+    pub fn get_board_state(self, state: u8, size: u8) -> u8 {
+        ((self.0 >> state) & (u64::max_value() >> (64-size))) as u8
     }
 
+    // Public interface for the board
     #[inline]
-    pub fn initial_square(&self) -> Square {
+    pub fn origin_square(self) -> Square {
         Square::new((self.0 & 0x3f) as u8)
     }
 
     #[inline]
-    pub fn destination_square(&self) -> Square {
+    pub fn destination_square(self) -> Square {
         Square::new((self.0 >> 6) as u8 & 0x3f)
+    }
+
+    #[inline]
+    pub fn get_promotion_piece(self) -> Option<Piece> {
+        if self.has_flags(PROMOTION_FLAG) {
+            // from_u32 returns an Option, panic!s if the piece code is invalid
+            Piece::from_u64(self.0 >> 12 & 0b11)
+        } else {
+            None
+        }
+    }
+
+    // This is not triggered by en passant capture which has its own making and unmaking procedure
+    #[inline]
+    pub fn get_captured_piece(self) -> Option<Piece> {
+        if self.has_flags(CAPTURE_FLAG) && !self.has_flags(EN_PASSANT_CAPTURE_FLAG) {
+            Piece::from_u64(self.0 >> 16 & 0xf)
+        } else {
+            None
+        }
+    }
+
+    // if the move is a double pawn push, returns the associated en passant target square
+    #[inline]
+    pub fn get_en_passant_target_square(self) -> Option<Square> {
+        if self.has_exact_flags(DOUBLE_PUSH_FLAG) {
+            Some(self.destination_square())
+        } else {
+            None
+        }
+    }
+
+    // If this is a castling move, returns the from and to squares of the associated tower
+    #[inline]
+    pub fn get_castling_rook(self) -> Option<(Square, Square)> {
+        if self == KING_CASTLE_MOVE {
+            Some((WHITE_ROOK_KING_CASTLE_ORIGIN_SQUARE, WHITE_ROOK_KING_CASTLE_DEST_SQUARE))
+        } else if self == QUEEN_CASTLE_MOVE {
+            Some((WHITE_ROOK_QUEEN_CASTLE_ORIGIN_SQUARE, WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE))
+        } else {
+            None
+        }
+    }
+
+    // If this is an en passant capture, returns the captured pawn square
+    #[inline]
+    pub fn get_en_passant_capture_square(self) -> Option<Square> {
+        if self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) {
+            Some(self.destination_square().behind())
+        } else {
+            None
+        }
     }
 }
 
-// Moves iterator
+impl PartialEq for Move {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 & 0xffff == other.0 & 0xffff
+    }
+}
+
+// White moves iterator
 impl Board {
 
     // Returns the basic pawn pushs without promotion
@@ -205,9 +260,7 @@ impl Board {
         let basic_pawns = self[Piece::PAWN] & self[Color::WHITE] & !ROW_7;
         let simple_pushed_pawns = (basic_pawns << 8) & self.empty_squares();
 
-        simple_pushed_pawns.map(|bitboard|
-                                Move::new_quiet_move((bitboard >> 8).as_square(),
-                                                  bitboard.as_square()))
+        simple_pushed_pawns.map(|dest_square| Move::quiet_move(dest_square.behind(), dest_square))
     }
 
     // Returns the pawns that can do the initial double pushs
@@ -219,20 +272,18 @@ impl Board {
         // The pawns that can both be pushed for one and two lines forward
         let double_pushed_pawns = (simple_pushed_pawns << 8) & self.empty_squares();
 
-        double_pushed_pawns.map(|bitboard|
-                                Move::new_quiet_move((bitboard >> 16).as_square(),
-                                                  bitboard.as_square())
-                                .double_push())
+        double_pushed_pawns.map(|dest_square| Move::quiet_move(dest_square.behind().behind(), dest_square)
+                                .set_flags(DOUBLE_PUSH_FLAG))
     }
 
     pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> {
         let basic_pawns = self[Piece::PAWN] & self[Color::WHITE] & !ROW_7;
         // left white capture
         let left_capture_iterator = ((basic_pawns & !FILE_A) << 7 & self.empty_squares())
-            .map(|bitboard| Move::new_quiet_move((bitboard >> 7).as_square(), bitboard.as_square()));
+            .map(|dest_square| Move::quiet_move(dest_square.behind_right(), dest_square));
         // right white capture
         let right_capture_iterator = ((basic_pawns & !FILE_H) << 9 & self.empty_squares())
-            .map(|bitboard| Move::new_quiet_move((bitboard >> 9).as_square(), bitboard.as_square()));
+            .map(|dest_square| Move::quiet_move(dest_square.behind_left(), dest_square));
         left_capture_iterator.chain(right_capture_iterator)
     }
 
@@ -241,61 +292,62 @@ impl Board {
         let promoting_pawns = self[Piece::PAWN] & self[Color::WHITE] & ROW_7;
         // push
         let push_promotion_iterator = ((promoting_pawns << 8) & self.empty_squares())
-            .map(|bitboard| Move::new_quiet_move((bitboard >> 8).as_square(), bitboard.as_square()));
+            .map(|dest_square| Move::tactical_move(dest_square.behind(), dest_square, PROMOTION_FLAG));
         // catpure
         // left
         let left_capture_iterator = ((promoting_pawns & !FILE_A) << 7 & self.empty_squares())
-            .map(move |bitboard| Move::new_capture_move((bitboard >> 7).as_square(), bitboard.as_square(), self[bitboard.as_square()].unwrap()));
+            .map(move |dest_square|
+                 Move::tactical_move(dest_square.behind_right(), dest_square, CAPTURE_FLAG | PROMOTION_FLAG)
+                 .set_captured_piece(self[dest_square].unwrap()));
         // right
         let right_capture_iterator = ((promoting_pawns & !FILE_H) << 9 & self.empty_squares())
-            .map(move |bitboard| Move::new_capture_move((bitboard >> 9).as_square(), bitboard.as_square(), self[bitboard.as_square()].unwrap()));
+            .map(move |dest_square|
+                 Move::tactical_move(dest_square.behind_left(), dest_square, CAPTURE_FLAG | PROMOTION_FLAG)
+                 .set_captured_piece(self[dest_square].unwrap()));
 
         push_promotion_iterator.chain(left_capture_iterator).chain(right_capture_iterator).flat_map(|mov| mov.promotion_move_iterator())
     }
 
     pub fn en_passant_captures(&self) -> impl Iterator <Item = Move> + '_ {
-        (EN_PASSANT_TABLE[self.en_passant_target_index()] & self[Piece::PAWN])
-            .map(move |bitboard| Move::new_quiet_move(bitboard.as_square(), self.en_passant_square()).set_capture().en_passant())
+        (en_passant_captures_start_square(self.en_passant) & self[Piece::PAWN] & self[Color::WHITE])
+            .map(move |origin_square| Move::tactical_move(origin_square, self.en_passant.unwrap(), EN_PASSANT_CAPTURE_FLAG))
     }
 
+    // TODO redo all below functions with quiet moves and capture moves distinction
     pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {
         (self[Piece::KNIGHT] & self[Color::WHITE])
-            .flat_map(move |knight| (KNIGHT_ATTACK_TABLE[knight.as_index()] & !self[Color::WHITE])
-                      .map(move |bitboard| Move::new_quiet_move(knight.as_square(), bitboard.as_square())))
+            .flat_map(move |knight_square| (KNIGHT_ATTACK_TABLE[knight_square.as_index()] & !self[Color::WHITE])
+                      .map(move |dest_square| Move::quiet_move(knight_square, dest_square)))
     }
 
-    // TODO redo this with quiet moves and capture moves distinction
-    fn sliding_attack(&self, piece: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
-        (piece_attack(piece.as_square(), self.occupied_squares()) & !self[Color::WHITE])
-            .map(move |bitboard| Move::new_quiet_move(piece.as_square(), bitboard.as_square()))
+    fn sliding_attack(&self, origin_square: Square, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
+        (piece_attack(origin_square, self.occupied_squares()) & !self[Color::WHITE])
+            .map(move |dest_square| Move::quiet_move(origin_square, dest_square))
     }
 
     pub fn bishop_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Piece::BISHOP] & self[Color::WHITE]).flat_map(move |bishop| self.sliding_attack(bishop, bishop_attack))
+        (self[Piece::BISHOP] & self[Color::WHITE]).flat_map(move |bishop_square| self.sliding_attack(bishop_square, bishop_attack))
     }
 
     pub fn rook_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Piece::ROOK] & self[Color::WHITE]).flat_map(move |rook| self.sliding_attack(rook, rook_attack))
+        (self[Piece::ROOK] & self[Color::WHITE]).flat_map(move |rook_square| self.sliding_attack(rook_square, rook_attack))
     }
 
     pub fn queen_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Piece::QUEEN] & self[Color::WHITE]).flat_map(move |queen| self.sliding_attack(queen, bishop_attack)
-                                                           .chain(self.sliding_attack(queen, rook_attack)))
+        (self[Piece::QUEEN] & self[Color::WHITE]).flat_map(move |queen_square| self.sliding_attack(queen_square, bishop_attack)
+                                                           .chain(self.sliding_attack(queen_square, rook_attack)))
     }
 
     pub fn king_moves(&self) -> impl Iterator <Item = Move> + '_ {
         (self[Piece::KING] & self[Color::WHITE])
-            .flat_map(move |king| (KING_ATTACK_TABLE[king.as_index()] & !self[Color::WHITE])
-                      .map(move |bitboard| Move::new_quiet_move(king.as_square(), bitboard.as_square())))
+            .flat_map(move |king_square| (KING_ATTACK_TABLE[king_square.as_index()] & !self[Color::WHITE])
+                      .map(move |dest_square| Move::quiet_move(king_square, dest_square)))
     }
 
     // Castling moves are only encoding the king move
     pub fn castling(&self) -> impl Iterator <Item = Move> + '_ {
-        self.king_castling().map(|bitboard|
-                                 Move::new_quiet_move(WHITE_KING_STARTING_SQUARE, bitboard.as_square()).king_castle()
-        ).chain(self.queen_castling().map(|bitboard|
-                                          Move::new_quiet_move(WHITE_KING_STARTING_SQUARE, bitboard.as_square()).queen_castle())
-        )
+        self.king_castling().map(|_square| KING_CASTLE_MOVE)
+            .chain(self.queen_castling().map(|_square| QUEEN_CASTLE_MOVE))
     }
 
     // TODO change this with move ordering
@@ -310,23 +362,28 @@ impl Board {
             .chain(self.rook_moves())
             .chain(self.queen_moves())
             .chain(self.king_moves())
-            .chain(self.castling())
+            .chain(self.castling()).map(move |mov| self.decorate_move(mov))
     }
 }
 
-
+fn en_passant_captures_start_square(target: Option<Square>) -> BitBoard {
+    if let Some(square) = target {
+        EN_PASSANT_TABLE[(square.0 - 32) as usize]
+    } else {
+        BitBoard::empty()
+    }
+}
 
 
 impl fmt::Debug for Move {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Move {} {}", self.initial_square(), self.destination_square())
+        write!(f, "Move {} {}", self.origin_square(), self.destination_square())
     }
 }
 
 #[allow(clippy::unreadable_literal)]
-const fn en_passant_table() -> [BitBoard; 9] {
+const fn en_passant_table() -> [BitBoard; 8] {
     [
-        BitBoard::empty(), // No en passant target
         BitBoard::new(0x0200000000),
         BitBoard::new(0x0500000000),
         BitBoard::new(0x0a00000000),

@@ -5,7 +5,7 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Shl, Shr, Mul};
 
 use utils::*;
 
-use move_generation::Move;
+use move_generation::*;
 
 // The board is represented as a set of bitboards
 // See: https://www.chessprogramming.org/Bitboards
@@ -28,11 +28,17 @@ pub struct Board {
     pub pieces: [BitBoard; 6],
     pub occupancy: [BitBoard; 2], // black pieces first
 
-    en_passant: BitBoard, // position of an en passant target (0 otherwise)
-    castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order than FEN notation when white plays)
+    pub en_passant: Option<Square>, // position of an en passant target (0 otherwise)
+    castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
+
+    halfmove_clock: u8,
 
     pub board_88: [Option<Piece>; 64],
 }
+
+const REMOVE_ALL_WHITE_CASTLING_RIGHTS: u8 = 0b1100;
+const REMOVE_QUEEN_SIDE_WHITE_CASTLING_RIGHTS: u8 = 0b1101;
+const REMOVE_KING_SIDE_WHITE_CASTLING_RIGHTS: u8 = 0b1110;
 
 impl Board {
     // Returns a board representing the initial position
@@ -51,8 +57,10 @@ impl Board {
             occupancy: [BitBoard::new(0xffff000000000000),  // Black
                         BitBoard::new(0x000000000000ffff)], // White
 
-            en_passant: BitBoard::empty(),
+            en_passant: None,
             castling_rights: 0xf,
+
+            halfmove_clock: 0,
 
             board_88: [None; 64],
         };
@@ -67,8 +75,10 @@ impl Board {
             pieces:    [BitBoard::new(0); 6],
             occupancy: [BitBoard::new(0); 2],
 
-            en_passant: BitBoard::empty(),
+            en_passant: None,
             castling_rights: 0,
+
+            halfmove_clock: 0,
 
             board_88: [None; 64],
         }
@@ -78,62 +88,160 @@ impl Board {
     // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, mov: Move) {
         // Move the piece
-        let moved_piece = self[mov.initial_square()].unwrap();
+        let moved_piece = self[mov.origin_square()].unwrap();
 
-        self.move_piece(mov.initial_square(), mov.destination_square(), moved_piece);
+        self.halfmove_clock = if moved_piece == Piece::PAWN {
+            0
+        } else {
+            self.halfmove_clock+1
+        };
 
-        // Capture TODO en passant
-        if let Some(captured_piece) = mov.captured_piece() {
-            self[captured_piece] &= !mov.initial_square().as_bitboard();
-            self[Color::BLACK] &= !mov.initial_square().as_bitboard();
+        // Capture
+        // Not triggered by en passant capture
+        if let Some(captured_piece) = mov.get_captured_piece() {
+            self.delete_piece(mov.destination_square(), captured_piece, Color::BLACK);
+
+            self.halfmove_clock = 0;
         }
+
+        // We move the piece after the capture
+        self.move_piece(mov.origin_square(), mov.destination_square(), moved_piece);
+
+        // En passant capture
+        if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
+            self.delete_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK);
+
+            self.halfmove_clock = 0;
+        }
+
         // Castling, move the other rook
-        if let Some((rook_from_square, rook_dest_square)) = mov.castle_rook() {
+        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook() {
             self.move_piece(rook_from_square, rook_dest_square, Piece::ROOK);
         }
         // Double pawn push, set the en passant target
-        self.en_passant = mov.get_en_passant_target();
+        self.en_passant = mov.get_en_passant_target_square();
         // Promotion
+        if let Some(promotion_piece) = mov.get_promotion_piece() {
+            self.delete_piece(mov.destination_square(), Piece::PAWN, Color::WHITE);
+            self.create_piece(mov.destination_square(), promotion_piece, Color::WHITE);
+
+            self.halfmove_clock = 0;
+        }
+        // Castling rights update
+        if moved_piece == Piece::KING {
+            self.castling_rights &= REMOVE_ALL_WHITE_CASTLING_RIGHTS;
+        } else if moved_piece == Piece::ROOK {
+            if mov.origin_square() == WHITE_ROOK_KING_CASTLE_ORIGIN_SQUARE {
+                self.castling_rights &= REMOVE_KING_SIDE_WHITE_CASTLING_RIGHTS;
+            } else if mov.origin_square() == WHITE_ROOK_QUEEN_CASTLE_ORIGIN_SQUARE {
+                self.castling_rights &= REMOVE_QUEEN_SIDE_WHITE_CASTLING_RIGHTS;
+            }
+        }
     }
 
     pub fn unmake(&mut self, mov: Move) {
         // Move the piece back
         let moved_piece = self[mov.destination_square()].unwrap();
 
-        self.move_piece(mov.destination_square(), mov.initial_square(), moved_piece);
+        self.move_piece(mov.destination_square(), mov.origin_square(), moved_piece);
 
         // Capture
-        if let Some(captured_piece) = mov.captured_piece() {
-            self[captured_piece] |= mov.destination_square().as_bitboard();
-            self[Color::BLACK] |= mov.destination_square().as_bitboard();
+        if let Some(captured_piece) = mov.get_captured_piece() {
+            self.create_piece(mov.destination_square(), captured_piece, Color::BLACK);
         }
-        // Castling
-        // En passant
+        // En passant capture
+        if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
+            self.create_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK);
+        }
+
+        // Castling, move the other rook
+        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook() {
+            self.move_piece(rook_dest_square, rook_from_square, Piece::ROOK);
+        }
+
         // Promotion
+        if let Some(promotion_piece) = mov.get_promotion_piece() {
+            self.delete_piece(mov.destination_square(), promotion_piece, Color::WHITE);
+        }
+
+        // TODO restore en passant
+        self.en_passant = mov.get_en_passant_target_square();
     }
 
+    #[inline]
     fn move_piece(&mut self, from: Square, to: Square, moved_piece: Piece) {
-        let reset_mask = !from.as_bitboard();
-        let set_mask = to.as_bitboard();
+        self.delete_piece(from, moved_piece, Color::WHITE);
+        self.create_piece(to, moved_piece, Color::WHITE);
+    }
 
-        // Unset the previous square
-        self[moved_piece] &= reset_mask;
-        self[Color::WHITE] &= reset_mask;
-        self[from] = None;
+    #[inline]
+    fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
+        let reset_mask = !square.as_bitboard();
+        self[piece] &= reset_mask;
+        self[color] &= reset_mask;
+        self[square] = None;
+    }
 
-        // Set the new square
-        self[moved_piece] |= set_mask;
-        self[Color::WHITE] |= set_mask;
-        self[to] = Some(moved_piece);
+    #[inline]
+    fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
+        let set_mask = square.as_bitboard();
+        self[piece] |= set_mask;
+        self[color] |= set_mask;
+        self[square] = Some(piece);
     }
 
     // Fills the redondant 88 representation from the bitboards representation
     fn fill_88(&mut self) {
         for piece in &PIECES_LIST {
             for square in self[*piece] {
-                self.board_88[square.as_index()] = Some(*piece);
+                self[square] = Some(*piece);
             }
         }
+    }
+
+    // Decorate a move with the irreversible states of the board
+    // s.a. en passant, castling rights and halfmove clock
+    #[inline]
+    pub fn decorate_move(&self, mov: Move) -> Move {
+        mov.set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET) 
+            .set_board_state(self.en_passant.map_or(0, |square| square.0), EN_PASSANT_SQUARE_BITS_OFFSET)
+            .set_board_state(self.halfmove_clock, HALFMOVE_CLOCK_BITS_OFFSET)
+    }
+
+    #[inline]
+    pub fn occupied_squares(&self) -> BitBoard {
+        self[Color::WHITE] | self[Color::BLACK]
+    }
+
+    #[inline]
+    pub fn empty_squares(&self) -> BitBoard {
+        !self.occupied_squares()
+    }
+
+    fn switch_side(&mut self) {
+        for bitboard in &mut self.pieces {
+            *bitboard = bitboard.reverse()
+        }
+        let mut white_pieces = self[Color::WHITE]; // Happy borrow checker
+        mem::swap(&mut white_pieces, &mut self[Color::BLACK]);
+
+        self.en_passant = self.en_passant.map(|square| square.reverse());
+        self.castling_rights = ((self.castling_rights << 2) + (self.castling_rights >> 2)) & 0xf;
+
+        for (id_end, id_beg) in (32..64).rev().zip(0..) {
+            let mut beg = self.board_88[id_beg];
+            mem::swap(&mut beg, &mut self.board_88[id_end]);
+        }
+    }
+
+    #[inline]
+    pub fn king_castling(&self) -> BitBoard {
+        WHITE_KING_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x1)
+    }
+
+    #[inline]
+    pub fn queen_castling(&self) -> BitBoard {
+        WHITE_QUEEN_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x2)
     }
 
     // TODO clean parser
@@ -184,7 +292,7 @@ impl Board {
         // En passant
         if fen_parts[3].len() == 2 {
             let chars: Vec<_> = fen_parts[3].chars().collect();
-            board.en_passant = Square::from_char_rank_file(chars[0], chars[1]).as_bitboard();
+            board.en_passant = Some(Square::from_char_rank_file(chars[0], chars[1]));
         }
         // castling
         if fen_parts[2] != "-" {
@@ -203,52 +311,6 @@ impl Board {
 
         Ok(board)
     }
-
-    #[inline]
-    pub fn occupied_squares(&self) -> BitBoard {
-        self[Color::WHITE] | self[Color::BLACK]
-    }
-
-    #[inline]
-    pub fn empty_squares(&self) -> BitBoard {
-        self.occupied_squares().not()
-    }
-
-    fn switch_side(&mut self) {
-        for bitboard in &mut self.pieces {
-            *bitboard = bitboard.reverse()
-        }
-        let mut white_pieces = self[Color::WHITE]; // Happy borrow checker
-        mem::swap(&mut white_pieces, &mut self[Color::BLACK]);
-
-        self.en_passant = self.en_passant.reverse();
-        self.castling_rights = ((self.castling_rights << 2) + (self.castling_rights >> 2)) & 0xf;
-
-        for (id_end, id_beg) in (32..64).rev().zip(0..) {
-            let mut beg = self.board_88[id_beg];
-            mem::swap(&mut beg, &mut self.board_88[id_end]);
-        }
-    }
-
-    #[inline]
-    pub fn en_passant_target_index(&self) -> usize {
-        64usize - (self.en_passant >> 32).0.leading_zeros() as usize
-    }
-
-    #[inline]
-    pub fn en_passant_square(&self) -> Square {
-        self.en_passant.as_square()
-    }
-
-    #[inline]
-    pub fn king_castling(&self) -> BitBoard {
-        WHITE_KING_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x1)
-    }
-
-    #[inline]
-    pub fn queen_castling(&self) -> BitBoard {
-        WHITE_QUEEN_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x2)
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -266,20 +328,15 @@ impl BitBoard {
 
     #[inline]
     pub fn as_square(self) -> Square {
-        Square(63u8 - self.0.leading_zeros() as u8)
-    }
-
-    #[inline]
-    pub fn as_index(self) -> usize {
-        63usize - self.0.leading_zeros() as usize
+        Square(self.0.trailing_zeros() as u8)
     }
 
     // Returns the bitboard containing only the LSB and removes it
     #[inline]
-    pub fn pop_lsb_bitboard(&mut self) -> Self {
+    pub fn pop_lsb_as_square(&mut self) -> Square {
         let singly_populated_bitboard = self.0 & self.0.overflowing_neg().0;
         self.0 ^= singly_populated_bitboard;
-        BitBoard(singly_populated_bitboard)
+        BitBoard(singly_populated_bitboard).as_square()
     }
 
     #[inline]
@@ -288,14 +345,14 @@ impl BitBoard {
     }
 }
 
-// Iterates over the singly populated bitboards of the given bitboard
+// Iterates over the bits of the given bitboard and returns the associated Square
 // starting from the MSB
 impl Iterator for BitBoard {
-    type Item = BitBoard;
+    type Item = Square;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.0 != 0 {
-            Some(self.pop_lsb_bitboard())
+            Some(self.pop_lsb_as_square())
         } else  {
             None
         }

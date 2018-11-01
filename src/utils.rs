@@ -38,19 +38,17 @@ pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
 // Those constants represent a single square but are used as bitboard so we convert them once and
 // for all
-pub const WHITE_KING_STARTING_SQUARE: Square = Square::from_char_rank_file('e', '1');
-
 pub const WHITE_KING_CASTLE_DEST_SQUARE: BitBoard = Square::from_char_rank_file('g', '1').as_bitboard();
 pub const WHITE_QUEEN_CASTLE_DEST_SQUARE: BitBoard = Square::from_char_rank_file('c', '1').as_bitboard();
 
-pub const WHITE_ROOK_KING_CASTLE_FROM_SQUARE: Square = Square::from_char_rank_file('h', '1');
+pub const WHITE_ROOK_KING_CASTLE_ORIGIN_SQUARE: Square = Square::from_char_rank_file('h', '1');
 pub const WHITE_ROOK_KING_CASTLE_DEST_SQUARE: Square = Square::from_char_rank_file('f', '1');
-pub const WHITE_ROOK_QUEEN_CASTLE_FROM_SQUARE: Square = Square::from_char_rank_file('a', '1');
+pub const WHITE_ROOK_QUEEN_CASTLE_ORIGIN_SQUARE: Square = Square::from_char_rank_file('a', '1');
 pub const WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE: Square = Square::from_char_rank_file('d', '1');
 
 // We declare knights to queen first to use the value directly in promotion code in move encoding
 enum_from_primitive! {
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Piece {
     KNIGHT = 0,
@@ -80,7 +78,7 @@ impl IndexMut<Piece> for Board {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Square(pub u8);
 
 impl Square {
@@ -93,6 +91,33 @@ impl Square {
     #[inline]
     pub const fn from_file_rank(file: u8, rank: u8) -> Self {
         Square(8*rank + (7-file))
+    }
+
+    // Returns the square behind (1 row below)
+    #[inline]
+    pub fn behind(self) -> Self {
+        Square(self.0 - 8)
+    }
+
+    // Returns the square forward (1 row above)
+    #[inline]
+    pub fn forward(self) -> Self {
+        Square(self.0 + 8)
+    }
+
+    #[inline]
+    pub fn behind_left(self) -> Self {
+        Square(self.0 - 9)
+    }
+
+    #[inline]
+    pub fn behind_right(self) -> Self {
+        Square(self.0 - 7)
+    }
+
+    #[inline]
+    pub fn reverse(self) -> Self {
+        Square(63 - self.0)
     }
 
     // Creates a square from file and rank between 0 and 7
@@ -123,6 +148,7 @@ impl Square {
         BitBoard::new(1 << self.0)
     }
 
+    #[inline]
     pub fn as_index(self) -> usize {
         self.0 as usize
     }
