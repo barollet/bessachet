@@ -35,6 +35,10 @@ pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
+pub const WHITE_KING_CASTLE_EMPTY: BitBoard = BitBoard::new(0x0000000000000006);
+pub const WHITE_KING_CASTLE_CHECK: BitBoard = BitBoard::new(0x000000000000000e);
+pub const WHITE_QUEEN_CASTLE_EMPTY: BitBoard = BitBoard::new(0x0000000000000070);
+pub const WHITE_QUEEN_CASTLE_CHECK: BitBoard = BitBoard::new(0x0000000000000030);
 
 // Those constants represent a single square but are used as bitboard so we convert them once and
 // for all

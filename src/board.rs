@@ -164,8 +164,15 @@ impl Board {
             self.delete_piece(mov.destination_square(), promotion_piece, Color::WHITE);
         }
 
-        // TODO restore en passant
-        self.en_passant = mov.get_en_passant_target_square();
+        // restore en passant, caslting rights and halfmove clock from the move metadata
+        let en_passant_square = mov.get_board_state(EN_PASSANT_SQUARE_BITS_OFFSET, EN_PASSANT_SQUARE_BITS_SIZE);
+        self.en_passant = if en_passant_square != 0 {
+            Some(Square::new(en_passant_square))
+        } else {
+            None
+        };
+        self.halfmove_clock = mov.get_board_state(HALFMOVE_CLOCK_BITS_OFFSET, HALFMOVE_CLOCK_BITS_SIZE);
+        self.castling_rights = mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE);
     }
 
     #[inline]
@@ -203,7 +210,7 @@ impl Board {
     // s.a. en passant, castling rights and halfmove clock
     #[inline]
     pub fn decorate_move(&self, mov: Move) -> Move {
-        mov.set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET) 
+        mov.set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET)
             .set_board_state(self.en_passant.map_or(0, |square| square.0), EN_PASSANT_SQUARE_BITS_OFFSET)
             .set_board_state(self.halfmove_clock, HALFMOVE_CLOCK_BITS_OFFSET)
     }
@@ -235,13 +242,31 @@ impl Board {
     }
 
     #[inline]
-    pub fn king_castling(&self) -> BitBoard {
-        WHITE_KING_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x1)
+    pub fn can_king_castle(&self) -> bool {
+        (self.castling_rights & 0x1 != 0) // right to castle kingside
+        && (WHITE_KING_CASTLE_EMPTY & self.occupied_squares() == 0) // none of the squares on the way are occupied
+        && (WHITE_KING_CASTLE_CHECK.all(|square| !self.is_in_check(square, Color::BLACK))) // squares crossed by the king are in check
     }
 
     #[inline]
-    pub fn queen_castling(&self) -> BitBoard {
-        WHITE_QUEEN_CASTLE_DEST_SQUARE * u64::from(self.castling_rights & 0x2)
+    pub fn can_queen_castle(&self) -> bool {
+        (self.castling_rights & 0x2 != 0) // right to castle queenside
+        && (WHITE_QUEEN_CASTLE_EMPTY & self.occupied_squares() == 0) // none of the squares on the way are occupied
+        && (WHITE_QUEEN_CASTLE_CHECK.all(|square| !self.is_in_check(square, Color::BLACK))) // squares crossed by the king are in check
+    }
+
+    // returns if the given square is checked by a piece of the given color
+    // TODO do it again but at the double board level
+    // TODO do it efficiently with only attacks and not captures
+    pub fn is_in_check(&self, square: Square, color: Color) -> bool {
+        let mut switch = self.clone();
+        switch.switch_side();
+        match color {
+            Color::BLACK => switch.possible_moves() // TODO use attack map instead
+                .any(|mov| mov.destination_square() == square),
+            Color::WHITE => self.possible_moves()
+                .any(|mov| mov.destination_square() == square),
+        }
     }
 
     // TODO clean parser
@@ -410,6 +435,12 @@ impl Mul<u64> for BitBoard {
     type Output = Self;
     fn mul(self, rhs: u64) -> Self {
         BitBoard::new(self.0 * rhs)
+    }
+}
+
+impl PartialEq<u64> for BitBoard {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
     }
 }
 

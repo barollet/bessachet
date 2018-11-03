@@ -279,10 +279,10 @@ impl Board {
     pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> {
         let basic_pawns = self[Piece::PAWN] & self[Color::WHITE] & !ROW_7;
         // left white capture
-        let left_capture_iterator = ((basic_pawns & !FILE_A) << 7 & self.empty_squares())
+        let left_capture_iterator = ((basic_pawns & !FILE_A) << 7 & self[Color::BLACK])
             .map(|dest_square| Move::quiet_move(dest_square.behind_right(), dest_square));
         // right white capture
-        let right_capture_iterator = ((basic_pawns & !FILE_H) << 9 & self.empty_squares())
+        let right_capture_iterator = ((basic_pawns & !FILE_H) << 9 & self[Color::BLACK])
             .map(|dest_square| Move::quiet_move(dest_square.behind_left(), dest_square));
         left_capture_iterator.chain(right_capture_iterator)
     }
@@ -295,12 +295,12 @@ impl Board {
             .map(|dest_square| Move::tactical_move(dest_square.behind(), dest_square, PROMOTION_FLAG));
         // catpure
         // left
-        let left_capture_iterator = ((promoting_pawns & !FILE_A) << 7 & self.empty_squares())
+        let left_capture_iterator = ((promoting_pawns & !FILE_A) << 7 & self[Color::BLACK])
             .map(move |dest_square|
                  Move::tactical_move(dest_square.behind_right(), dest_square, CAPTURE_FLAG | PROMOTION_FLAG)
                  .set_captured_piece(self[dest_square].unwrap()));
         // right
-        let right_capture_iterator = ((promoting_pawns & !FILE_H) << 9 & self.empty_squares())
+        let right_capture_iterator = ((promoting_pawns & !FILE_H) << 9 & self[Color::BLACK])
             .map(move |dest_square|
                  Move::tactical_move(dest_square.behind_left(), dest_square, CAPTURE_FLAG | PROMOTION_FLAG)
                  .set_captured_piece(self[dest_square].unwrap()));
@@ -346,8 +346,15 @@ impl Board {
 
     // Castling moves are only encoding the king move
     pub fn castling(&self) -> impl Iterator <Item = Move> + '_ {
-        self.king_castling().map(|_square| KING_CASTLE_MOVE)
-            .chain(self.queen_castling().map(|_square| QUEEN_CASTLE_MOVE))
+        if self.can_king_castle() {
+            Some(KING_CASTLE_MOVE)
+        } else {
+            None
+        }.into_iter().chain(if self.can_queen_castle() {
+            Some(QUEEN_CASTLE_MOVE)
+        } else {
+            None
+        }.into_iter())
     }
 
     // TODO change this with move ordering
