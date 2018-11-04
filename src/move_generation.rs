@@ -4,7 +4,7 @@ use std::ptr;
 use std::fmt;
 
 use self::init_magic::get_fixed_offset;
-use board::{Board, BitBoard};
+use board::{Board, HalfBoard, BitBoard};
 
 use utils::*;
 use enum_primitive::FromPrimitive;
@@ -81,7 +81,6 @@ static EN_PASSANT_TABLE: [BitBoard; 8] = en_passant_table(); // 64 bytes 8*8 bit
 // pc3 .. pc0 | prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
 // 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
 #[derive(Clone, Copy)]
-// TODO add all the irreversible metadata and implement PartialEq for only the 16 lowest bits
 pub struct Move(u64);
 
 const SPECIAL0_FLAG: u64 = 1 << 12;
@@ -97,15 +96,14 @@ const EN_PASSANT_CAPTURE_FLAG: u64 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
 const KING_CASTLE_FLAG: u64 = SPECIAL0_FLAG;
 const QUEEN_CASTLE_FLAG: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG;
 
-const KING_CASTLE_MOVE: Move = Move::raw_new(
-    Square::from_char_rank_file('e', '1'),
-    Square::from_char_rank_file('g', '1')
-).set_flags(KING_CASTLE_FLAG);
+// [black castle, white castle]
+pub const KING_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
+    Move::raw_new(D1_SQUARE, B1_SQUARE).set_flags(KING_CASTLE_FLAG),
+    Move::raw_new(E1_SQUARE, G1_SQUARE).set_flags(KING_CASTLE_FLAG));
 
-const QUEEN_CASTLE_MOVE: Move = Move::raw_new(
-    Square::from_char_rank_file('e', '1'),
-    Square::from_char_rank_file('c', '1')
-).set_flags(QUEEN_CASTLE_FLAG);
+pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
+    Move::raw_new(D1_SQUARE, F1_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
+    Move::raw_new(E1_SQUARE, C1_SQUARE).set_flags(QUEEN_CASTLE_FLAG));
 
 //const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
 
@@ -224,11 +222,11 @@ impl Move {
 
     // If this is a castling move, returns the from and to squares of the associated tower
     #[inline]
-    pub fn get_castling_rook(self) -> Option<(Square, Square)> {
-        if self == KING_CASTLE_MOVE {
-            Some((WHITE_ROOK_KING_CASTLE_ORIGIN_SQUARE, WHITE_ROOK_KING_CASTLE_DEST_SQUARE))
-        } else if self == QUEEN_CASTLE_MOVE {
-            Some((WHITE_ROOK_QUEEN_CASTLE_ORIGIN_SQUARE, WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE))
+    pub fn get_castling_rook(self, side_to_move: Color) -> Option<(Square, Square)> {
+        if self.has_exact_flags(KING_CASTLE_FLAG) {
+            Some((KING_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move], KING_CASTLE_ROOK_DEST_SQUARES[side_to_move]))
+        } else if self.has_exact_flags(QUEEN_CASTLE_FLAG) {
+            Some((QUEEN_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move], QUEEN_CASTLE_ROOK_DEST_SQUARES[side_to_move]))
         } else {
             None
         }
@@ -252,7 +250,7 @@ impl PartialEq for Move {
 }
 
 // White moves iterator
-impl Board {
+impl HalfBoard {
 
     // Returns the basic pawn pushs without promotion
     pub fn simple_pawn_pushs(&self) -> impl Iterator <Item = Move> {
@@ -344,19 +342,6 @@ impl Board {
                       .map(move |dest_square| Move::quiet_move(king_square, dest_square)))
     }
 
-    // Castling moves are only encoding the king move
-    pub fn castling(&self) -> impl Iterator <Item = Move> + '_ {
-        if self.can_king_castle() {
-            Some(KING_CASTLE_MOVE)
-        } else {
-            None
-        }.into_iter().chain(if self.can_queen_castle() {
-            Some(QUEEN_CASTLE_MOVE)
-        } else {
-            None
-        }.into_iter())
-    }
-
     // TODO change this with move ordering
     pub fn possible_moves(&self) -> impl Iterator <Item = Move> + '_ {
         self.simple_pawn_pushs()
@@ -369,7 +354,12 @@ impl Board {
             .chain(self.rook_moves())
             .chain(self.queen_moves())
             .chain(self.king_moves())
-            .chain(self.castling()).map(move |mov| self.decorate_move(mov))
+    }
+}
+
+impl Board {
+    pub fn possible_moves(&self) -> impl Iterator <Item = Move> + '_ {
+            self[self.side_to_move].possible_moves().chain(self.castling()).map(move |mov| self.decorate_move(mov))
     }
 }
 

@@ -3,52 +3,14 @@
 use std::fmt;
 use std::ops::{Index, IndexMut};
 
-use board::{BitBoard, Board};
+use board::BitBoard;
 
-/*
-pub const WHITE: usize = 1;
-pub const BLACK: usize = 0;
-*/
 #[derive(Copy, Clone)]
 #[repr(u8)]
 pub enum Color {
     BLACK = 0,
     WHITE,
 }
-
-impl Index<Color> for Board {
-    type Output = BitBoard;
-
-    fn index(&self, color: Color) -> &Self::Output {
-        &self.occupancy[color as usize]
-    }
-}
-
-impl IndexMut<Color> for Board {
-    fn index_mut(&mut self, color: Color) -> &mut BitBoard {
-        &mut self.occupancy[color as usize]
-    }
-}
-
-pub const ROW_2: BitBoard = BitBoard::new(0xff00);
-pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
-pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
-pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
-
-pub const WHITE_KING_CASTLE_EMPTY: BitBoard = BitBoard::new(0x0000000000000006);
-pub const WHITE_KING_CASTLE_CHECK: BitBoard = BitBoard::new(0x000000000000000e);
-pub const WHITE_QUEEN_CASTLE_EMPTY: BitBoard = BitBoard::new(0x0000000000000070);
-pub const WHITE_QUEEN_CASTLE_CHECK: BitBoard = BitBoard::new(0x0000000000000030);
-
-// Those constants represent a single square but are used as bitboard so we convert them once and
-// for all
-pub const WHITE_KING_CASTLE_DEST_SQUARE: BitBoard = Square::from_char_rank_file('g', '1').as_bitboard();
-pub const WHITE_QUEEN_CASTLE_DEST_SQUARE: BitBoard = Square::from_char_rank_file('c', '1').as_bitboard();
-
-pub const WHITE_ROOK_KING_CASTLE_ORIGIN_SQUARE: Square = Square::from_char_rank_file('h', '1');
-pub const WHITE_ROOK_KING_CASTLE_DEST_SQUARE: Square = Square::from_char_rank_file('f', '1');
-pub const WHITE_ROOK_QUEEN_CASTLE_ORIGIN_SQUARE: Square = Square::from_char_rank_file('a', '1');
-pub const WHITE_ROOK_QUEEN_CASTLE_DEST_SQUARE: Square = Square::from_char_rank_file('d', '1');
 
 // We declare knights to queen first to use the value directly in promotion code in move encoding
 enum_from_primitive! {
@@ -68,22 +30,72 @@ pub enum Piece {
 pub static AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
 pub static PIECES_LIST: [Piece; 6] = [ Piece::PAWN, Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN, Piece::KING ];
 
-impl Index<Piece> for Board {
-    type Output = BitBoard;
-
-    fn index(&self, piece: Piece) -> &Self::Output {
-        &self.pieces[piece as usize]
-    }
-}
-
-impl IndexMut<Piece> for Board {
-    fn index_mut(&mut self, piece: Piece) -> &mut BitBoard {
-        &mut self.pieces[piece as usize]
-    }
-}
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct Square(pub u8);
+
+// This is an array of size 2 indexable by Color to obtain an attribute that is color dependant
+// such as castling squares or castling moves
+#[derive(Clone)]
+pub struct BlackWhiteAttribute<T>([T; 2]);
+
+impl<T> BlackWhiteAttribute<T> {
+    // Black value is declared first
+    pub const fn new(black_value: T, white_value: T) -> Self {
+        BlackWhiteAttribute([black_value, white_value])
+    }
+}
+
+impl<T> Index<Color> for BlackWhiteAttribute<T> {
+    type Output = T;
+
+    fn index(&self, color: Color) -> &Self::Output {
+        &self.0[color as usize]
+    }
+}
+
+impl<T> IndexMut<Color> for BlackWhiteAttribute<T> {
+    fn index_mut(&mut self, color: Color) -> &mut T {
+        &mut self.0[color as usize]
+    }
+}
+
+// Some constants declaration
+pub const ROW_2: BitBoard = BitBoard::new(0xff00);
+pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
+pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
+pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
+
+pub const A1_SQUARE: Square = Square::from_char_rank_file('a', '1');
+pub const B1_SQUARE: Square = Square::from_char_rank_file('b', '1');
+pub const C1_SQUARE: Square = Square::from_char_rank_file('c', '1');
+pub const D1_SQUARE: Square = Square::from_char_rank_file('d', '1');
+pub const E1_SQUARE: Square = Square::from_char_rank_file('e', '1');
+pub const F1_SQUARE: Square = Square::from_char_rank_file('f', '1');
+pub const G1_SQUARE: Square = Square::from_char_rank_file('g', '1');
+pub const H1_SQUARE: Square = Square::from_char_rank_file('h', '1');
+pub const A8_SQUARE: Square = Square::from_char_rank_file('a', '8');
+pub const C8_SQUARE: Square = Square::from_char_rank_file('c', '8');
+pub const D8_SQUARE: Square = Square::from_char_rank_file('d', '8');
+pub const H8_SQUARE: Square = Square::from_char_rank_file('h', '8');
+
+// [Black masks, White masks]
+pub const KING_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard>
+    = BlackWhiteAttribute::new(BitBoard::new(0x0000000000000060), BitBoard::new(0x0000000000000006));
+pub const KING_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
+    = BlackWhiteAttribute::new(BitBoard::new(0x0000000000000070), BitBoard::new(0x000000000000000e));
+pub const QUEEN_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard>
+    = BlackWhiteAttribute::new(BitBoard::new(0x000000000000000e), BitBoard::new(0x0000000000000070));
+pub const QUEEN_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
+    = BlackWhiteAttribute::new(BitBoard::new(0x000000000000001c), BitBoard::new(0x0000000000000030));
+
+pub const KING_CASTLE_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(B1_SQUARE, G1_SQUARE);
+pub const QUEEN_CASTLE_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(F1_SQUARE, C1_SQUARE);
+
+// [Black square, White square]
+pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(H8_SQUARE, H1_SQUARE);
+pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(C8_SQUARE, C1_SQUARE);
+pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(A8_SQUARE, A1_SQUARE);
+pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(D8_SQUARE, D1_SQUARE);
 
 impl Square {
     #[inline]
@@ -117,11 +129,6 @@ impl Square {
     #[inline]
     pub fn behind_right(self) -> Self {
         Square(self.0 - 7)
-    }
-
-    #[inline]
-    pub fn reverse(self) -> Self {
-        Square(63 - self.0)
     }
 
     // Creates a square from file and rank between 0 and 7
@@ -158,17 +165,26 @@ impl Square {
     }
 }
 
-impl Index<Square> for Board {
-    type Output = Option<Piece>;
+// Transpose trait is for objects that can be transposed into the other player pov.
+// Actually the trait is never used as a trait but just for readability
+pub trait Transpose {
+    fn transpose(&self) -> Self;
+}
 
-    fn index(&self, square: Square) -> &Self::Output {
-        &self.board_88[square.as_index()]
+impl Transpose for Square {
+    #[inline]
+    fn transpose(&self) -> Self {
+        Square(63 - self.0)
     }
 }
 
-impl IndexMut<Square> for Board {
-    fn index_mut(&mut self, square: Square) -> &mut Option<Piece> {
-        &mut self.board_88[square.as_index()]
+impl Transpose for Color {
+    #[inline]
+    fn transpose(&self) -> Self {
+        match self {
+            Color::BLACK => Color::WHITE,
+            Color::WHITE => Color::BLACK,
+        }
     }
 }
 
