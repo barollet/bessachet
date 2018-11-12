@@ -14,7 +14,7 @@ pub enum Color {
 
 // We declare knights to queen first to use the value directly in promotion code in move encoding
 enum_from_primitive! {
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Piece {
     KNIGHT = 0,
@@ -25,6 +25,19 @@ pub enum Piece {
     PAWN,
     KING,
 }
+}
+
+impl Piece {
+    pub fn to_char(self) -> char {
+        match self {
+            Piece::PAWN => 'p',
+            Piece::KNIGHT => 'n',
+            Piece::BISHOP => 'b',
+            Piece::ROOK => 'r',
+            Piece::QUEEN => 'q',
+            Piece::KING => 'k',
+        }
+    }
 }
 
 pub static AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
@@ -88,9 +101,6 @@ pub const QUEEN_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard>
 pub const QUEEN_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
     = BlackWhiteAttribute::new(BitBoard::new(0x000000000000001c), BitBoard::new(0x0000000000000030));
 
-pub const KING_CASTLE_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(B1_SQUARE, G1_SQUARE);
-pub const QUEEN_CASTLE_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(F1_SQUARE, C1_SQUARE);
-
 // [Black square, White square]
 pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(H8_SQUARE, H1_SQUARE);
 pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(C8_SQUARE, C1_SQUARE);
@@ -115,20 +125,14 @@ impl Square {
         Square(self.0 - 8)
     }
 
-    // Returns the square forward (1 row above)
-    #[inline]
-    pub fn forward(self) -> Self {
-        Square(self.0 + 8)
-    }
-
     #[inline]
     pub fn behind_left(self) -> Self {
-        Square(self.0 - 9)
+        Square(self.0 - 7)
     }
 
     #[inline]
     pub fn behind_right(self) -> Self {
-        Square(self.0 - 7)
+        Square(self.0 - 9)
     }
 
     // Creates a square from file and rank between 0 and 7

@@ -1,4 +1,4 @@
-mod init_magic;
+pub mod init_magic;
 
 use std::ptr;
 use std::fmt;
@@ -9,7 +9,14 @@ use board::{Board, HalfBoard, BitBoard};
 use utils::*;
 use enum_primitive::FromPrimitive;
 
-// Legal move generator
+// Perft tests for move generation, see move_generation/perft_tests.rs
+#[cfg(test)]
+mod perft_tests;
+
+// This module provides a legal move generator to a board
+// through the possible_moves interface
+// TODO improve interface
+// TODO make it legal (and not pseudo legal anymore)
 
 
 // unsafe attack table for rooks, bishops and queens
@@ -18,7 +25,9 @@ use enum_primitive::FromPrimitive;
 //
 // This table is computed at runtime not to make the binary executable too big
 // hence the mut keyword
-static mut SLIDING_ATTACK_TABLE: [u64; 50866] = [0; 50866]; // 406928 bytes
+// TODO better magic table with none naive arrangement and better magic factors to reduce size
+// There is about 45000 holes right now
+static mut SLIDING_ATTACK_TABLE: [u64; 83352] = [0; 83352]; // 651kB
 
 // See move_generation/init_magic.rs for impl block with initiatlization
 #[derive(Debug, Copy, Clone)]
@@ -54,6 +63,7 @@ fn raw_sliding_attack(square: Square, occupancy: BitBoard, table: &[MagicEntry; 
 
     let hash_key = occupancy.0 | magic_entry.black_mask;
     let table_offset = get_fixed_offset(hash_key, magic_entry.magic);
+
     BitBoard::new(unsafe {
         ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
     })
@@ -93,7 +103,7 @@ const FLAGS_RANGE: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG | CAPTURE_FLAG | PROMOTIO
 const DOUBLE_PUSH_FLAG: u64 = SPECIAL0_FLAG;
 const EN_PASSANT_CAPTURE_FLAG: u64 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
 
-const KING_CASTLE_FLAG: u64 = SPECIAL0_FLAG;
+const KING_CASTLE_FLAG: u64 = SPECIAL1_FLAG;
 const QUEEN_CASTLE_FLAG: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG;
 
 // [black castle, white castle]
@@ -118,7 +128,7 @@ pub const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
 impl Move {
     // Creates a simple move with no side effect
     #[inline]
-    fn quiet_move(from: Square, to: Square) -> Self {
+    pub fn quiet_move(from: Square, to: Square) -> Self {
         Move(u64::from(from.0) + (u64::from(to.0) << 6))
     }
 
@@ -155,7 +165,7 @@ impl Move {
 
     #[inline]
     fn has_exact_flags(self, flags: u64) -> bool {
-        self.0 & FLAGS_RANGE ^ flags == 0
+        self.0 & FLAGS_RANGE == flags
     }
 
     #[inline]
@@ -203,7 +213,7 @@ impl Move {
     // This is not triggered by en passant capture which has its own making and unmaking procedure
     #[inline]
     pub fn get_captured_piece(self) -> Option<Piece> {
-        if self.has_flags(CAPTURE_FLAG) && !self.has_flags(EN_PASSANT_CAPTURE_FLAG) {
+        if self.has_flags(CAPTURE_FLAG) && !self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) {
             Piece::from_u64(self.0 >> 16 & 0xf)
         } else {
             None
@@ -249,6 +259,18 @@ impl PartialEq for Move {
     }
 }
 
+impl Transpose for Move {
+    fn transpose(&self) -> Self {
+        let origin_square = self.origin_square().transpose();
+        let dest_square = self.destination_square().transpose();
+        let mut transposed_move = Move(self.0);
+        transposed_move.0 &= !0xfff; // Clearing the old squares
+        transposed_move.0 |= u64::from(origin_square.0) + (u64::from(dest_square.0) << 6);
+
+        transposed_move
+    }
+}
+
 // White moves iterator
 impl HalfBoard {
 
@@ -274,14 +296,16 @@ impl HalfBoard {
                                 .set_flags(DOUBLE_PUSH_FLAG))
     }
 
-    pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> {
+    pub fn pawn_captures_without_promotion(&self) -> impl Iterator <Item = Move> + '_ {
         let basic_pawns = self[Piece::PAWN] & self[Color::WHITE] & !ROW_7;
         // left white capture
-        let left_capture_iterator = ((basic_pawns & !FILE_A) << 7 & self[Color::BLACK])
-            .map(|dest_square| Move::quiet_move(dest_square.behind_right(), dest_square));
+        let left_capture_iterator = ((basic_pawns & !FILE_A) << 9 & self[Color::BLACK])
+            .map(move |dest_square| Move::tactical_move(dest_square.behind_right(), dest_square, CAPTURE_FLAG)
+                 .set_captured_piece(self[dest_square].unwrap()));
         // right white capture
-        let right_capture_iterator = ((basic_pawns & !FILE_H) << 9 & self[Color::BLACK])
-            .map(|dest_square| Move::quiet_move(dest_square.behind_left(), dest_square));
+        let right_capture_iterator = ((basic_pawns & !FILE_H) << 7 & self[Color::BLACK])
+            .map(move |dest_square| Move::tactical_move(dest_square.behind_left(), dest_square, CAPTURE_FLAG)
+                 .set_captured_piece(self[dest_square].unwrap()));
         left_capture_iterator.chain(right_capture_iterator)
     }
 
@@ -293,12 +317,12 @@ impl HalfBoard {
             .map(|dest_square| Move::tactical_move(dest_square.behind(), dest_square, PROMOTION_FLAG));
         // catpure
         // left
-        let left_capture_iterator = ((promoting_pawns & !FILE_A) << 7 & self[Color::BLACK])
+        let left_capture_iterator = ((promoting_pawns & !FILE_A) << 9 & self[Color::BLACK])
             .map(move |dest_square|
                  Move::tactical_move(dest_square.behind_right(), dest_square, CAPTURE_FLAG | PROMOTION_FLAG)
                  .set_captured_piece(self[dest_square].unwrap()));
         // right
-        let right_capture_iterator = ((promoting_pawns & !FILE_H) << 9 & self[Color::BLACK])
+        let right_capture_iterator = ((promoting_pawns & !FILE_H) << 7 & self[Color::BLACK])
             .map(move |dest_square|
                  Move::tactical_move(dest_square.behind_left(), dest_square, CAPTURE_FLAG | PROMOTION_FLAG)
                  .set_captured_piece(self[dest_square].unwrap()));
@@ -308,19 +332,31 @@ impl HalfBoard {
 
     pub fn en_passant_captures(&self) -> impl Iterator <Item = Move> + '_ {
         (en_passant_captures_start_square(self.en_passant) & self[Piece::PAWN] & self[Color::WHITE])
-            .map(move |origin_square| Move::tactical_move(origin_square, self.en_passant.unwrap(), EN_PASSANT_CAPTURE_FLAG))
+            .map(move |origin_square| Move::tactical_move(origin_square, self.en_passant.unwrap(), EN_PASSANT_CAPTURE_FLAG)
+                 .set_captured_piece(Piece::PAWN))
     }
 
     // TODO redo all below functions with quiet moves and capture moves distinction
     pub fn knight_moves(&self) -> impl Iterator <Item = Move> + '_ {
         (self[Piece::KNIGHT] & self[Color::WHITE])
-            .flat_map(move |knight_square| (KNIGHT_ATTACK_TABLE[knight_square.as_index()] & !self[Color::WHITE])
-                      .map(move |dest_square| Move::quiet_move(knight_square, dest_square)))
+            .flat_map(move |knight_square| {
+                let attack = KNIGHT_ATTACK_TABLE[knight_square.as_index()];
+                (attack & self.empty_squares())
+                    .map(move |dest_square| Move::quiet_move(knight_square, dest_square))
+                .chain((attack & self[Color::BLACK])
+                    .map(move |dest_square| Move::tactical_move(knight_square, dest_square, CAPTURE_FLAG)
+                        .set_captured_piece(self[dest_square].unwrap())))
+            })
     }
 
-    fn sliding_attack(&self, origin_square: Square, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> {
-        (piece_attack(origin_square, self.occupied_squares()) & !self[Color::WHITE])
+    fn sliding_attack(&self, origin_square: Square, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> + '_ {
+        let attack = piece_attack(origin_square, self.occupied_squares());
+        (attack & self.empty_squares())
             .map(move |dest_square| Move::quiet_move(origin_square, dest_square))
+        .chain((attack & self[Color::BLACK])
+            .map(move |dest_square| Move::tactical_move(origin_square, dest_square, CAPTURE_FLAG)
+                 .set_captured_piece(self[dest_square].unwrap()))
+        )
     }
 
     pub fn bishop_moves(&self) -> impl Iterator <Item = Move> + '_ {
@@ -355,11 +391,31 @@ impl HalfBoard {
             .chain(self.queen_moves())
             .chain(self.king_moves())
     }
+
+    // TODO remove this once move generation is working
+    pub fn debug_move_counts(&self) {
+        println!("simple push {}", self.simple_pawn_pushs().count());
+        println!("double push {}", self.double_pawn_pushs().count());
+        println!("pawn capture without prom {}", self.pawn_captures_without_promotion().count());
+        println!("pawn promotions {}", self.pawn_promotion_moves().count());
+        println!("en passant cap {}", self.en_passant_captures().count());
+        println!("knight {}", self.knight_moves().count());
+        println!("bishop {}", self.bishop_moves().count());
+        println!("rook {}", self.rook_moves().count());
+        println!("queen {}", self.queen_moves().count());
+        println!("king {}", self.king_moves().count());
+    }
 }
 
 impl Board {
     pub fn possible_moves(&self) -> impl Iterator <Item = Move> + '_ {
-            self[self.side_to_move].possible_moves().chain(self.castling()).map(move |mov| self.decorate_move(mov))
+        self[self.side_to_move].possible_moves().chain(self.castling()).map(move |mov| self.decorate_move(mov))
+    }
+
+    // TODO remove this once move generation is working
+    pub fn debug_move_counts(&self) {
+        self[self.side_to_move].debug_move_counts();
+        println!("castling {}", self.castling().count());
     }
 }
 
@@ -372,9 +428,20 @@ fn en_passant_captures_start_square(target: Option<Square>) -> BitBoard {
 }
 
 
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}{}", self.origin_square(), self.destination_square())
+    }
+}
+
 impl fmt::Debug for Move {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Move {} {}", self.origin_square(), self.destination_square())
+        write!(f, "{}{} p:{} c:{} sp1:{} sp0:{}", self.origin_square(),
+                                                  self.destination_square(),
+                                                  self.has_flags(PROMOTION_FLAG),
+                                                  self.has_flags(CAPTURE_FLAG),
+                                                  self.has_flags(SPECIAL1_FLAG),
+                                                  self.has_flags(SPECIAL0_FLAG))
     }
 }
 
@@ -460,7 +527,7 @@ const fn knight_attack_table() -> [BitBoard; 64] {
         BitBoard::new(0x10a00000000000),
         BitBoard::new(0x20400000000000),
     ]
-}
+} // end of knight attack table
 
 
 #[allow(clippy::unreadable_literal)]
@@ -531,7 +598,7 @@ const fn king_attack_table() -> [BitBoard; 64] {
         BitBoard::new(0xa0e0000000000000),
         BitBoard::new(0x40c0000000000000),
     ]
-}
+} // end of king attack table
 
 // Prints the knight attack table
 #[allow(dead_code)]
@@ -588,7 +655,7 @@ pub fn find_attack_table_holes() {
         let mut holes_counter = 0;
         for (i, entry) in SLIDING_ATTACK_TABLE.iter().enumerate() {
             if *entry != 0 {
-                if i - hole_start > 50 {
+                if i - hole_start > 400 {
                     println!("hole at {} of size {}", hole_start, i - hole_start);
                 }
                 hole_start = i;
