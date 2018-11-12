@@ -126,6 +126,11 @@ impl Square {
     }
 
     #[inline]
+    pub fn forward(self) -> Self {
+        Square(self.0 + 8)
+    }
+
+    #[inline]
     pub fn behind_left(self) -> Self {
         Square(self.0 - 7)
     }

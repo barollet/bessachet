@@ -23,11 +23,10 @@ fn perft(board: &mut Board, depth: u8) -> usize {
 
         if !board.is_king_checked() {
             sum += perft(board, depth-1);
-            if depth == 2 {
+            if depth == 5 {
                 println!("{}: {}", mov, perft(board, depth-1));
+                //println!("{}", board);
             }
-        } else {
-            println!("checked");
         }
 
         board.unmake(mov);
@@ -42,11 +41,9 @@ fn initial_position() {
 
     let mut board = Board::initial_position();
 
-    //board.make(Move::quiet_move(Square::from_char_rank_file('g', '1'), Square::from_char_rank_file('h', '3')));
-    //board.make(Move::quiet_move(Square::from_char_rank_file('b', '2'), Square::from_char_rank_file('b', '4')));
-    //board.unmake(Move::quiet_move(Square::from_char_rank_file('b', '2'), Square::from_char_rank_file('b', '4')));
-
-    //board.make(&Move::quiet_move(Square::from_char_rank_file('f', '1'), Square::from_char_rank_file('b', '5')));
+    //board.make(Move::quiet_move(Square::from_char_rank_file('h', '2'), Square::from_char_rank_file('h', '4')));
+    //board.make(Move::quiet_move(Square::from_char_rank_file('h', '2'), Square::from_char_rank_file('h', '3')));
+    //board.make(Move::quiet_move(Square::from_char_rank_file('h', '4'), Square::from_char_rank_file('h', '5')));
 
     println!("{}", board);
 
@@ -54,15 +51,8 @@ fn initial_position() {
         println!("{} {}", mov.transpose(), mov);
     }
 
-    //board.debug_move_counts();
-
-    //assert_eq!(perft(&mut board, 2), 622);
-    //assert_eq!(perft(&mut board, 1), 18);
-
-    assert_eq!(perft(&mut board, 4), 197_281);
+    assert_eq!(perft(&mut board, 5),  4_865_609);
+    //assert_eq!(perft(&mut board, 4), 197_281);
     //assert_eq!(perft(&mut board, 3), 8902);
-    //
     //assert_eq!(perft(&mut board, 2), 400);
-    
-    
 }

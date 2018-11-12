@@ -332,7 +332,7 @@ impl HalfBoard {
 
     pub fn en_passant_captures(&self) -> impl Iterator <Item = Move> + '_ {
         (en_passant_captures_start_square(self.en_passant) & self[Piece::PAWN] & self[Color::WHITE])
-            .map(move |origin_square| Move::tactical_move(origin_square, self.en_passant.unwrap(), EN_PASSANT_CAPTURE_FLAG)
+            .map(move |origin_square| Move::tactical_move(origin_square, self.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG)
                  .set_captured_piece(Piece::PAWN))
     }
 

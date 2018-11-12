@@ -208,7 +208,7 @@ impl Board {
         // Capture
         // Not triggered by en passant capture
         if let Some(captured_piece) = mov.get_captured_piece() {
-            println!("Capture");
+            //println!("Capture");
             self.delete_piece(mov.destination_square(), captured_piece, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
@@ -219,7 +219,7 @@ impl Board {
 
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            //println!("EP Capture");
+            println!("EP Capture");
             self.delete_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
@@ -279,7 +279,8 @@ impl Board {
         }
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            //println!("Remove EP Capture");
+            println!("ep move {}", mov);
+            println!("Remove EP Capture");
             self.create_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_that_played);
         }
 
