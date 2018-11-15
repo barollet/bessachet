@@ -226,6 +226,7 @@ impl Board {
         }
 
         // Castling, move the other rook
+        // Castling rights are removed when the king moves
         if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(self.side_to_move) {
             //println!("Castle");
             self.move_piece(rook_from_square, rook_dest_square, Piece::ROOK, Color::WHITE, side_to_move);
@@ -264,10 +265,6 @@ impl Board {
     pub fn unmake(&mut self, mov: Move) {
         // Move the piece back
         let side_that_played = self.side_to_move.transpose();
-        if self[side_that_played][mov.destination_square()].is_none() {
-            println!("{} {}", mov, mov.transpose());
-            println!("{}", self);
-        }
         let moved_piece = self[side_that_played][mov.destination_square()].unwrap();
 
         self.move_piece(mov.destination_square(), mov.origin_square(), moved_piece, Color::WHITE, side_that_played);
@@ -351,14 +348,14 @@ impl Board {
     pub fn can_king_castle(&self) -> bool {
         (self.castling_rights & KING_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle kingside
         && (KING_CASTLE_EMPTY[self.side_to_move] & self[self.side_to_move].occupied_squares() == 0) // none of the squares on the way are occupied
-        && (KING_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square, self.side_to_move.transpose()))) // squares crossed by the king are in check
+        && (KING_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square.transpose(), self.side_to_move.transpose()))) // squares crossed by the king are in check
     }
 
     #[inline]
     pub fn can_queen_castle(&self) -> bool {
         (self.castling_rights & QUEEN_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle queenside
         && (QUEEN_CASTLE_EMPTY[self.side_to_move] & self[self.side_to_move].occupied_squares() == 0) // none of the squares on the way are occupied
-        && (QUEEN_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square, self.side_to_move.transpose()))) // squares crossed by the king are in check
+        && (QUEEN_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square.transpose(), self.side_to_move.transpose()))) // squares crossed by the king are in check
     }
 
     // Castling moves are only encoding the king move
@@ -498,8 +495,6 @@ impl HalfBoard {
             }
         }
 
-        // Setting metadata
-
         // En passant
         if fen_parts[3].len() == 2 {
             let chars: Vec<_> = fen_parts[3].chars().collect();
@@ -520,7 +515,7 @@ impl Board {
         if fen_parts.len() < 4 || fen_parts.len() > 6 {
             return Err("Invalid FEN string");
         }
-        
+
         board[Color::WHITE] = HalfBoard::from_fen(&fen_parts)?;
         board[Color::BLACK] = board[Color::WHITE].transpose();
 
@@ -538,6 +533,11 @@ impl Board {
         }
 
         // TODO side to move and halfmove_clock
+        match fen_parts[1].chars().next() {
+            Some('w') => board.side_to_move = Color::WHITE,
+            Some('b') => board.side_to_move = Color::BLACK,
+            _ => return Err("Invalid FEN string"),
+        }
 
         Ok(board)
     }

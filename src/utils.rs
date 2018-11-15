@@ -74,9 +74,12 @@ impl<T> IndexMut<Color> for BlackWhiteAttribute<T> {
 
 // Some constants declaration
 pub const ROW_2: BitBoard = BitBoard::new(0xff00);
+pub const ROW_5: BitBoard = BitBoard::new(0x000000ff00000000);
 pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
+
+pub const EN_PASSANT_TARGET_LINE: BitBoard = ROW_5;
 
 pub const A1_SQUARE: Square = Square::from_char_rank_file('a', '1');
 pub const B1_SQUARE: Square = Square::from_char_rank_file('b', '1');
@@ -102,10 +105,10 @@ pub const QUEEN_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
     = BlackWhiteAttribute::new(BitBoard::new(0x000000000000001c), BitBoard::new(0x0000000000000030));
 
 // [Black square, White square]
-pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(H8_SQUARE, H1_SQUARE);
-pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(C8_SQUARE, C1_SQUARE);
-pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(A8_SQUARE, A1_SQUARE);
-pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(D8_SQUARE, D1_SQUARE);
+pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(A1_SQUARE, H1_SQUARE); // H8 transpose for black
+pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(F1_SQUARE, C1_SQUARE);
+pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(H1_SQUARE, A1_SQUARE);
+pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(E1_SQUARE, D1_SQUARE);
 
 impl Square {
     #[inline]

@@ -424,9 +424,6 @@ impl HalfBoard {
 
     // TODO remove this once move generation is working
     pub fn debug_move_counts(&self) {
-        println!("occupancy\n{:?}", self.occupied_squares());
-        println!("queen bishop\n{:?}", bishop_attack((self[Piece::QUEEN] & self[Color::WHITE]).as_square(), self.occupied_squares()));
-
         println!("simple push {}", self.simple_pawn_pushs().count());
         println!("double push {}", self.double_pawn_pushs().count());
         println!("pawn capture without prom {}", self.pawn_captures_without_promotion().count());
@@ -454,7 +451,12 @@ impl Board {
 
 fn en_passant_captures_start_square(target: Option<Square>) -> BitBoard {
     if let Some(square) = target {
-        EN_PASSANT_TABLE[(square.0 - 32) as usize]
+        // TODO remove this condition when we will have a better test for check
+        if EN_PASSANT_TARGET_LINE.has_square(square) {
+            EN_PASSANT_TABLE[(square.0 - 32) as usize]
+        } else {
+            BitBoard::empty()
+        }
     } else {
         BitBoard::empty()
     }
