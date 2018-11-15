@@ -219,7 +219,7 @@ impl Board {
 
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            println!("EP Capture");
+            //println!("EP Capture");
             self.delete_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
@@ -279,8 +279,7 @@ impl Board {
         }
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            println!("ep move {}", mov);
-            println!("Remove EP Capture");
+            //println!("Remove EP Capture");
             self.create_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_that_played);
         }
 
@@ -351,15 +350,15 @@ impl Board {
     #[inline]
     pub fn can_king_castle(&self) -> bool {
         (self.castling_rights & KING_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle kingside
-        && (KING_CASTLE_EMPTY[self.side_to_move] & self[Color::WHITE].occupied_squares() == 0) // none of the squares on the way are occupied
-        && (KING_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square, Color::BLACK))) // squares crossed by the king are in check
+        && (KING_CASTLE_EMPTY[self.side_to_move] & self[self.side_to_move].occupied_squares() == 0) // none of the squares on the way are occupied
+        && (KING_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square, self.side_to_move.transpose()))) // squares crossed by the king are in check
     }
 
     #[inline]
     pub fn can_queen_castle(&self) -> bool {
         (self.castling_rights & QUEEN_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle queenside
-        && (QUEEN_CASTLE_EMPTY[self.side_to_move] & self[Color::WHITE].occupied_squares() == 0) // none of the squares on the way are occupied
-        && (QUEEN_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square, Color::BLACK))) // squares crossed by the king are in check
+        && (QUEEN_CASTLE_EMPTY[self.side_to_move] & self[self.side_to_move].occupied_squares() == 0) // none of the squares on the way are occupied
+        && (QUEEN_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square, self.side_to_move.transpose()))) // squares crossed by the king are in check
     }
 
     // Castling moves are only encoding the king move

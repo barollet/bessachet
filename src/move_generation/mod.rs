@@ -3,7 +3,7 @@ pub mod init_magic;
 use std::ptr;
 use std::fmt;
 
-use self::init_magic::get_fixed_offset;
+use self::init_magic::{get_fixed_offset, get_fixed_offset_bishop};
 use board::{Board, HalfBoard, BitBoard};
 
 use utils::*;
@@ -12,6 +12,10 @@ use enum_primitive::FromPrimitive;
 // Perft tests for move generation, see move_generation/perft_tests.rs
 #[cfg(test)]
 mod perft_tests;
+
+// Testing the magic factors
+#[cfg(test)]
+mod magic_factors_tests;
 
 // This module provides a legal move generator to a board
 // through the possible_moves interface
@@ -27,7 +31,8 @@ mod perft_tests;
 // hence the mut keyword
 // TODO better magic table with none naive arrangement and better magic factors to reduce size
 // There is about 45000 holes right now
-static mut SLIDING_ATTACK_TABLE: [u64; 83352] = [0; 83352]; // 651kB
+//static mut SLIDING_ATTACK_TABLE: [u64; 83352] = [0; 83352]; // 651kB
+pub static mut SLIDING_ATTACK_TABLE: [u64; 88507] = [0; 88507]; // 651kB
 
 // See move_generation/init_magic.rs for impl block with initiatlization
 #[derive(Debug, Copy, Clone)]
@@ -40,8 +45,8 @@ pub struct MagicEntry {
 
 // The magic entries for rooks and bishops (also mutable because pure functions cannot access
 // static variables)
-static mut BISHOP_ATTACK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
-static mut ROOK_ATTACK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
+pub static mut BISHOP_ATTACK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
+pub static mut ROOK_ATTACK_TABLE: [MagicEntry; 64] = [MagicEntry::empty_magic(); 64];
 
 // Safe wrapper around the unsafe initialization (that have to be sequential)
 pub fn init_magic_tables() {
@@ -69,12 +74,32 @@ fn raw_sliding_attack(square: Square, occupancy: BitBoard, table: &[MagicEntry; 
     })
 }
 
-fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    raw_sliding_attack(square, occupancy, unsafe { &ROOK_ATTACK_TABLE })
+pub fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
+    //raw_sliding_attack(square, occupancy, unsafe { &ROOK_ATTACK_TABLE })
+    let magic_entry = unsafe {ROOK_ATTACK_TABLE[usize::from(square.0)]};
+
+    let table_pointer = magic_entry.table;
+
+    let hash_key = occupancy.0 | magic_entry.black_mask;
+    let table_offset = get_fixed_offset(hash_key, magic_entry.magic);
+
+    BitBoard::new(unsafe {
+        ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
+    })
 }
 
-fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    raw_sliding_attack(square, occupancy, unsafe { &BISHOP_ATTACK_TABLE })
+pub fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
+    //raw_sliding_attack(square, occupancy, unsafe { &BISHOP_ATTACK_TABLE })
+    let magic_entry = unsafe {BISHOP_ATTACK_TABLE[usize::from(square.0)]};
+
+    let table_pointer = magic_entry.table;
+
+    let hash_key = occupancy.0 | magic_entry.black_mask;
+    let table_offset = get_fixed_offset_bishop(hash_key, magic_entry.magic);
+
+    BitBoard::new(unsafe {
+        ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask
+    })
 }
 
 static KNIGHT_ATTACK_TABLE: [BitBoard; 64] = knight_attack_table(); // 512 bytes
@@ -373,9 +398,14 @@ impl HalfBoard {
     }
 
     pub fn king_moves(&self) -> impl Iterator <Item = Move> + '_ {
-        (self[Piece::KING] & self[Color::WHITE])
-            .flat_map(move |king_square| (KING_ATTACK_TABLE[king_square.as_index()] & !self[Color::WHITE])
-                      .map(move |dest_square| Move::quiet_move(king_square, dest_square)))
+        let king_square = (self[Piece::KING] & self[Color::WHITE]).as_square();
+        let attack = KING_ATTACK_TABLE[king_square.as_index()];
+        (attack & self.empty_squares())
+            .map(move |dest_square| Move::quiet_move(king_square, dest_square))
+        .chain((attack & self[Color::BLACK])
+            .map(move |dest_square| Move::tactical_move(king_square, dest_square, CAPTURE_FLAG)
+                 .set_captured_piece(self[dest_square].unwrap()))
+        )
     }
 
     // TODO change this with move ordering
@@ -394,6 +424,9 @@ impl HalfBoard {
 
     // TODO remove this once move generation is working
     pub fn debug_move_counts(&self) {
+        println!("occupancy\n{:?}", self.occupied_squares());
+        println!("queen bishop\n{:?}", bishop_attack((self[Piece::QUEEN] & self[Color::WHITE]).as_square(), self.occupied_squares()));
+
         println!("simple push {}", self.simple_pawn_pushs().count());
         println!("double push {}", self.double_pawn_pushs().count());
         println!("pawn capture without prom {}", self.pawn_captures_without_promotion().count());
