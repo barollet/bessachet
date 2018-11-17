@@ -112,7 +112,7 @@ static EN_PASSANT_TABLE: [BitBoard; 8] = en_passant_table(); // 64 bytes 8*8 bit
 // representation in https://www.chessprogramming.org/Encoding_Moves
 // MSB -------------------------------------------------------- LSB
 // latter   | ep5 .. ep0 | hf6 .. hf0 | csl3 .. csl0 | pc3 .. pc0
-// 63 .. 39 |  38 .. 32  |  31 .. 24  |  23  ..  20  | 19  ..  16
+// 63 .. 39 |  38 .. 32 |x| 30 .. 24  |  23  ..  20  | 19  ..  16
 // pc3 .. pc0 | prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
 // 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
 #[derive(Clone, Copy)]
@@ -205,7 +205,7 @@ impl Move {
     }
 
     #[inline]
-    // value has to have trailing zeros not to overwrite some other state
+    // value has to have trailing zeros not to overwrite some other states
     pub fn set_board_state(self, value: u8, state: u8) -> Self {
         Move(self.0 | u64::from(value) << state)
     }

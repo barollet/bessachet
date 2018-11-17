@@ -106,7 +106,7 @@ pub const QUEEN_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
 
 // [Black square, White square]
 pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(A1_SQUARE, H1_SQUARE); // H8 transpose for black
-pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(F1_SQUARE, C1_SQUARE);
+pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(F1_SQUARE, F1_SQUARE);
 pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(H1_SQUARE, A1_SQUARE);
 pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(E1_SQUARE, D1_SQUARE);
 

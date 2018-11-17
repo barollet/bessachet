@@ -27,18 +27,13 @@ fn main() {
 
     let mut board = Board::initial_position();
 
+    board.castling_rights &= REMOVE_QUEEN_SIDE_CASTLING_RIGHTS[Color::WHITE];
+
     for mov in board.possible_moves() {
         println!("{}", mov);
+        println!("{}", mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE));
     }
 
-    println!("bishop attack\n{:?}", bishop_attack(Square::from_char_rank_file('e', '1'), BitBoard::empty()));
-    println!("bishop attack\n{:?}", bishop_attack(Square::from_char_rank_file('e', '1'), ROW_2));
-    println!("bishop attack\n{:?}", bishop_attack(Square::from_char_rank_file('e', '1'), BitBoard::new(0b1111111100011111111000000000000000000000001000101101110111111111)));
-
-    println!("occ\n{:?}", BitBoard::new(0b1111111100011111111000000000000000000000001000101101110111111111));
-
-    println!("bishop attack\n{:?}", bishop_attack(Square::from_char_rank_file('e', '1'), !BitBoard::empty()));
     //let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
-    //println!("{:?}", board);
 }
 

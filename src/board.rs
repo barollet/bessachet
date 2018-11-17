@@ -27,7 +27,7 @@ use move_generation::*;
 pub struct Board {
     halfboards: BlackWhiteAttribute<HalfBoard>, // The same position from black and white pov
 
-    castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
+    pub castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
     halfmove_clock: u8,
 
     pub side_to_move: Color,
@@ -46,9 +46,9 @@ pub struct HalfBoard {
 }
 
 // [black mask, white mask]
-const REMOVE_ALL_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0011, 0b1100);
-const REMOVE_QUEEN_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0111, 0b1101);
-const REMOVE_KING_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1011, 0b1110);
+pub const REMOVE_ALL_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0011, 0b1100);
+pub const REMOVE_QUEEN_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0111, 0b1101);
+pub const REMOVE_KING_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1011, 0b1110);
 
 const KING_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0100, 0b0001);
 const QUEEN_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1000, 0b0010);
@@ -692,6 +692,42 @@ impl fmt::Display for Board {
                     write!(f, "*")?;
                 }
             }
+            // Metadata info
+            if i == 6 {
+                write!(f, "   castling rights: ")?;
+                if self.castling_rights & 0b1000  != 0 {
+                    write!(f, "q")?;
+                } else {
+                    write!(f, ".")?;
+                }
+                if self.castling_rights & 0b0100  != 0 {
+                    write!(f, "k")?;
+                } else {
+                    write!(f, ".")?;
+                }
+                if self.castling_rights & 0b0010  != 0 {
+                    write!(f, "Q")?;
+                } else {
+                    write!(f, ".")?;
+                }
+                if self.castling_rights & 0b0001  != 0 {
+                    write!(f, "K")?;
+                } else {
+                    write!(f, ".")?;
+                }
+            }
+
+            if i == 4 {
+                if let Some(square) = self[Color::WHITE].en_passant {
+                    write!(f, "   en passant (white POV): {}", square)?;
+                } else {
+                    write!(f, "   en passant (white POV): None")?;
+                }
+            }
+            if i == 2 {
+                write!(f, "   halfmove clock: {}", self.halfmove_clock)?;
+            }
+
             writeln!(f)?;
         }
         writeln!(f, "{}", match self.side_to_move {
@@ -716,6 +752,7 @@ impl fmt::Display for HalfBoard {
                     write!(f, "*")?;
                 }
             }
+
             writeln!(f)?;
         }
         writeln!(f)
