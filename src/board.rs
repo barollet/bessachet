@@ -289,7 +289,8 @@ impl Board {
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
             //println!("Remove Promotion");
-            self.delete_piece(mov.destination_square(), promotion_piece, Color::WHITE, side_that_played);
+            self.delete_piece(mov.origin_square(), promotion_piece, Color::WHITE, side_that_played);
+            self.create_piece(mov.origin_square(), Piece::PAWN, Color::WHITE, side_that_played);
         }
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata

@@ -376,6 +376,11 @@ impl HalfBoard {
 
     fn sliding_attack(&self, origin_square: Square, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> + '_ {
         let attack = piece_attack(origin_square, self.occupied_squares());
+        for dest_square in attack & self[Color::BLACK] {
+            if self[dest_square].is_none() {
+                println!("{}", self);
+            }
+        }
         (attack & self.empty_squares())
             .map(move |dest_square| Move::quiet_move(origin_square, dest_square))
         .chain((attack & self[Color::BLACK])
