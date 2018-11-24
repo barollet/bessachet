@@ -186,7 +186,7 @@ impl Board {
                                                  HalfBoard::empty_board()), // White pov
 
             halfmove_clock: 0,
-            castling_rights: 0b1111,
+            castling_rights: 0,
 
             side_to_move: Color::WHITE,
         }
