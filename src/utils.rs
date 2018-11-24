@@ -5,7 +5,7 @@ use std::ops::{Index, IndexMut};
 
 use board::BitBoard;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Color {
     BLACK = 0,
@@ -81,18 +81,18 @@ pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
 pub const EN_PASSANT_TARGET_LINE: BitBoard = ROW_5;
 
-pub const A1_SQUARE: Square = Square::from_char_rank_file('a', '1');
-pub const B1_SQUARE: Square = Square::from_char_rank_file('b', '1');
-pub const C1_SQUARE: Square = Square::from_char_rank_file('c', '1');
-pub const D1_SQUARE: Square = Square::from_char_rank_file('d', '1');
-pub const E1_SQUARE: Square = Square::from_char_rank_file('e', '1');
-pub const F1_SQUARE: Square = Square::from_char_rank_file('f', '1');
-pub const G1_SQUARE: Square = Square::from_char_rank_file('g', '1');
-pub const H1_SQUARE: Square = Square::from_char_rank_file('h', '1');
-pub const A8_SQUARE: Square = Square::from_char_rank_file('a', '8');
-pub const C8_SQUARE: Square = Square::from_char_rank_file('c', '8');
-pub const D8_SQUARE: Square = Square::from_char_rank_file('d', '8');
-pub const H8_SQUARE: Square = Square::from_char_rank_file('h', '8');
+pub const A1_SQUARE: Square = Square::from_char_file_rank('a', '1');
+pub const B1_SQUARE: Square = Square::from_char_file_rank('b', '1');
+pub const C1_SQUARE: Square = Square::from_char_file_rank('c', '1');
+pub const D1_SQUARE: Square = Square::from_char_file_rank('d', '1');
+pub const E1_SQUARE: Square = Square::from_char_file_rank('e', '1');
+pub const F1_SQUARE: Square = Square::from_char_file_rank('f', '1');
+pub const G1_SQUARE: Square = Square::from_char_file_rank('g', '1');
+pub const H1_SQUARE: Square = Square::from_char_file_rank('h', '1');
+pub const A8_SQUARE: Square = Square::from_char_file_rank('a', '8');
+pub const C8_SQUARE: Square = Square::from_char_file_rank('c', '8');
+pub const D8_SQUARE: Square = Square::from_char_file_rank('d', '8');
+pub const H8_SQUARE: Square = Square::from_char_file_rank('h', '8');
 
 // [Black masks, White masks]
 pub const KING_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard>
@@ -102,7 +102,7 @@ pub const KING_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
 pub const QUEEN_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard>
     = BlackWhiteAttribute::new(BitBoard::new(0x000000000000000e), BitBoard::new(0x0000000000000070));
 pub const QUEEN_CASTLE_CHECK: BlackWhiteAttribute<BitBoard>
-    = BlackWhiteAttribute::new(BitBoard::new(0x000000000000001c), BitBoard::new(0x0000000000000030));
+    = BlackWhiteAttribute::new(BitBoard::new(0x000000000000001c), BitBoard::new(0x0000000000000038));
 
 // [Black square, White square]
 pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(A1_SQUARE, H1_SQUARE); // H8 transpose for black
@@ -145,7 +145,7 @@ impl Square {
 
     // Creates a square from file and rank between 0 and 7
     #[inline]
-    pub const fn from_char_rank_file(file: char, rank: char) -> Self {
+    pub const fn from_char_file_rank(file: char, rank: char) -> Self {
         Self::from_file_rank(file as u8 - b'a', rank as u8 - b'1')
     }
 

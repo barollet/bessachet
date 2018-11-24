@@ -23,7 +23,7 @@ fn perft(board: &mut Board, depth: u8) -> usize {
 
         if !board.is_king_checked() {
             sum += perft(board, depth-1);
-            if depth == 4 {
+            if depth == 5 {
                 println!("{} {}: {}", mov, mov.transpose(), perft(board, depth-1));
             }
         }
@@ -56,20 +56,16 @@ fn perft_kiwipete() {
 
     let mut board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ").unwrap();
 
-    //let mov = board.decorate_move(Move::quiet_move(Square::from_char_rank_file('b', '2'), Square::from_char_rank_file('b', '3')));
+    //let mov = board.get_move('a', '2', 'a', '3');
     //board.make(mov);
-    //board.make(Move::quiet_move(Square::from_char_rank_file('g', '2'), Square::from_char_rank_file('g', '3')));
-    //board.make(Move::quiet_move(Square::from_char_rank_file('c', '2'), Square::from_char_rank_file('c', '3')));
-    //board.make(Move::quiet_move(Square::from_char_rank_file('f', '2'), Square::from_char_rank_file('f', '3')));
-    //board.make(Move::quiet_move(Square::from_char_rank_file('h', '4'), Square::from_char_rank_file('h', '5')));
-    //
+
     println!("{}", board);
     for mov in board.possible_moves() {
         println!("{} {}", mov, mov.transpose());
     }
 
-    assert_eq!(perft(&mut board, 4), 4_085_603);
-
+    assert_eq!(perft(&mut board, 5), 193_690_690);
+    //assert_eq!(perft(&mut board, 4), 4_085_603);
     //assert_eq!(perft(&mut board, 3), 97862);
     //assert_eq!(perft(&mut board, 2), 2039);
     //assert_eq!(perft(&mut board, 1), 48);

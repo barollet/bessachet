@@ -195,7 +195,6 @@ impl Board {
     // For make and unmake, we assume that the provided move is valid
     // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, mov: Move) {
-        // Move the piece
         let side_to_move = self.side_to_move;
         let moved_piece = self[side_to_move][mov.origin_square()].unwrap();
 
@@ -212,6 +211,19 @@ impl Board {
             self.delete_piece(mov.destination_square(), captured_piece, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
+
+            // Remove caslting rights if it captures a rook on a castling square
+            if captured_piece == Piece::ROOK {
+                if side_to_move == Color::WHITE && mov.destination_square() == A8_SQUARE {
+                    self.castling_rights &= REMOVE_QUEEN_SIDE_CASTLING_RIGHTS[Color::BLACK];
+                } else if side_to_move == Color::WHITE && mov.destination_square() == H8_SQUARE {
+                    self.castling_rights &= REMOVE_KING_SIDE_CASTLING_RIGHTS[Color::BLACK];
+                } else if side_to_move == Color::BLACK && mov.destination_square() == A8_SQUARE {
+                    self.castling_rights &= REMOVE_KING_SIDE_CASTLING_RIGHTS[Color::WHITE];
+                } else if side_to_move == Color::BLACK && mov.destination_square() == H8_SQUARE {
+                    self.castling_rights &= REMOVE_QUEEN_SIDE_CASTLING_RIGHTS[Color::WHITE];
+                }
+            }
         }
 
         // We move the piece after the capture
@@ -344,7 +356,6 @@ impl Board {
     // This is a bit of move generation logic but castling checks are not exactly the same
     // depending on the side
     // All the move generation logic apart from caslting rights is in move_generation.rs
-    // TODO make the checks depend on the side to move
     #[inline]
     pub fn can_king_castle(&self) -> bool {
         (self.castling_rights & KING_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle kingside
@@ -375,9 +386,9 @@ impl Board {
     // End of caslting logic
 
     // returns if the given square is checked by a piece of the given color
-    // TODO do it efficiently with only attacks and not pawn pushs
+    // TODO do it "efficiently" with only attacks and not pawn pushs
     pub fn is_in_check(&self, square: Square, color: Color) -> bool {
-        self[color].possible_moves().any(|mov| mov.destination_square() == square)
+        self[color].attack_map().any(|attacked_square| attacked_square == square)
     }
 
     // temporary function while the move generation is pseudo legal
@@ -499,7 +510,7 @@ impl HalfBoard {
         // En passant
         if fen_parts[3].len() == 2 {
             let chars: Vec<_> = fen_parts[3].chars().collect();
-            board.en_passant = Some(Square::from_char_rank_file(chars[0], chars[1]));
+            board.en_passant = Some(Square::from_char_file_rank(chars[0], chars[1]));
         }
 
         board.fill_88();

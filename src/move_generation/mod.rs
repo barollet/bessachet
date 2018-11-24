@@ -376,11 +376,6 @@ impl HalfBoard {
 
     fn sliding_attack(&self, origin_square: Square, piece_attack: fn (Square, BitBoard) -> BitBoard) -> impl Iterator <Item = Move> + '_ {
         let attack = piece_attack(origin_square, self.occupied_squares());
-        for dest_square in attack & self[Color::BLACK] {
-            if self[dest_square].is_none() {
-                println!("{}", self);
-            }
-        }
         (attack & self.empty_squares())
             .map(move |dest_square| Move::quiet_move(origin_square, dest_square))
         .chain((attack & self[Color::BLACK])
@@ -427,6 +422,36 @@ impl HalfBoard {
             .chain(self.king_moves())
     }
 
+    // Returns an attack map of the given position with White playing
+    // TODO refactor it with moves
+    pub fn attack_map(&self) -> BitBoard {
+        let mut attack_map = BitBoard::empty();
+        // Pawns
+        attack_map |= (self[Piece::PAWN] & self[Color::WHITE] & !FILE_A) << 9;
+        attack_map |= (self[Piece::PAWN] & self[Color::WHITE] & !FILE_H) << 7;
+        // Knights
+        for knight_square in self[Piece::KNIGHT] & self[Color::WHITE] {
+            attack_map |= KNIGHT_ATTACK_TABLE[knight_square.as_index()];
+        }
+        // Bishops
+        for bishop_square in self[Piece::BISHOP] & self[Color::WHITE] {
+            attack_map |= bishop_attack(bishop_square, self.occupied_squares());
+        }
+        // Rooks
+        for rook_square in self[Piece::ROOK] & self[Color::WHITE] {
+            attack_map |= rook_attack(rook_square, self.occupied_squares());
+        }
+        // Queens
+        for queen_square in self[Piece::QUEEN] & self[Color::WHITE] {
+            attack_map |= bishop_attack(queen_square, self.occupied_squares());
+            attack_map |= rook_attack(queen_square, self.occupied_squares());
+        }
+        // King
+        attack_map |= KING_ATTACK_TABLE[(self[Piece::KING] & self[Color::WHITE]).as_square().as_index()];
+
+        attack_map
+    }
+
     // TODO remove this once move generation is working
     pub fn debug_move_counts(&self) {
         println!("simple push {}", self.simple_pawn_pushs().count());
@@ -452,6 +477,18 @@ impl Board {
         self[self.side_to_move].debug_move_counts();
         println!("castling {}", self.castling().count());
     }
+
+    // TODO remove this once move generation is working
+    pub fn get_move(&self, origin_file: char, origin_row: char, dest_file: char, dest_row: char) -> Move {
+        let origin_square = Square::from_char_file_rank(origin_file, origin_row);
+        let dest_square = Square::from_char_file_rank(dest_file, dest_row);
+        for mov in self.possible_moves() {
+            if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
+                return mov;
+            } 
+        }
+        panic!("Can't find move {}{}{}{}", origin_file, origin_row, dest_file, dest_row);
+    }
 }
 
 fn en_passant_captures_start_square(target: Option<Square>) -> BitBoard {
@@ -470,7 +507,13 @@ fn en_passant_captures_start_square(target: Option<Square>) -> BitBoard {
 
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}", self.origin_square(), self.destination_square())
+        write!(f, "{}{}{}", self.origin_square(), self.destination_square(), match self.get_promotion_piece() {
+            Some(Piece::KNIGHT) => "n",
+            Some(Piece::BISHOP) => "b",
+            Some(Piece::ROOK) => "r",
+            Some(Piece::QUEEN) => "q",
+            _ => "",
+        })
     }
 }
 
