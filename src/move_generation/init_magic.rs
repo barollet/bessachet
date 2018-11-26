@@ -9,9 +9,7 @@ impl MagicEntry {
     pub fn rook_magic(square: u8) -> Self {
         MagicEntry {
             magic: ROOK_MAGIC[usize::from(square)].0,
-            table: unsafe {
-                &mut SLIDING_ATTACK_TABLE[ROOK_MAGIC[usize::from(square)].1]
-            },
+            table: &SLIDING_ATTACK_TABLE[ROOK_MAGIC[usize::from(square)].1],
             black_mask: rook_black_mask(square),
             postmask: rook_attack_empty_board(square),
         }
@@ -20,50 +18,43 @@ impl MagicEntry {
     pub fn bishop_magic(square: u8) -> Self {
         MagicEntry {
             magic: BISHOP_MAGIC[usize::from(square)].0,
-            table: unsafe {
-                &mut SLIDING_ATTACK_TABLE[BISHOP_MAGIC[usize::from(square)].1]
-            },
+            table: &SLIDING_ATTACK_TABLE[BISHOP_MAGIC[usize::from(square)].1],
             black_mask: bishop_black_mask(square),
             postmask: bishop_attack_on_empty_board(square),
         }
     }
+}
 
-    // Attack table initialization
-    // rook boolean is set if we are filling a rook entry
-    pub fn fill_attack_table(&self, square: u8, rook: bool) {
-        let mask = if rook {
-            rook_mask(square)
-        } else {
-            bishop_mask(square)
-        };
+// Attack table initialization
+// rook boolean is set if we are filling a rook entry
+// Avoid using MagicEntry so we don't have deadlocks with lazy statics
+pub fn fill_attack_table(attack_table: &mut[u64], square: u8) {
+    let magic: u64 = ROOK_MAGIC[usize::from(square)].0;
+    let table_pointer: *mut u64 = &mut attack_table[ROOK_MAGIC[usize::from(square)].1];
+    fill_attack_table_helper(square, table_pointer, magic, rook_mask, rook_offset, rook_attack);
 
-        let n = mask.count_ones();
+    let magic: u64 = BISHOP_MAGIC[usize::from(square)].0;
+    let table_pointer: *mut u64 = &mut attack_table[BISHOP_MAGIC[usize::from(square)].1];
+    fill_attack_table_helper(square, table_pointer, magic, bishop_mask, bishop_offset, bishop_attack);
+}
 
-        for i in 0..(1 << n) {
-            let key = index_to_key(i, n, mask) | !mask;
-            let table_index = if rook {
-                get_fixed_offset(key, self.magic)
-            } else {
-                get_fixed_offset_bishop(key, self.magic)
-            };
-            unsafe {
-                let old_value: u64 = ptr::read(self.table.add(table_index));
-                let new_attack_value = old_value | if rook {
-                    rook_attack(square, key)
-                } else {
-                    bishop_attack(square, key)
-                };
-                ptr::write(self.table.add(table_index), new_attack_value);
-            }
-        }
-    }
+fn fill_attack_table_helper(square: u8,
+                            table_pointer: *mut u64,
+                            magic: u64,
+                            get_mask: fn (u8) -> u64,
+                            get_offset: fn (u64, u64) -> usize,
+                            get_attack: fn (u8, u64) -> u64) {
+    let mask = get_mask(square);
 
-    pub const fn empty_magic() -> Self {
-        MagicEntry {
-            magic: 0,
-            table: ptr::null_mut(),
-            black_mask: 0,
-            postmask: 0,
+    let n = mask.count_ones();
+
+    for i in 0..(1 << n) {
+        let key = index_to_key(i, n, mask) | !mask;
+        let table_index = get_offset(key, magic);
+        unsafe {
+            let old_value: u64 = ptr::read(table_pointer.add(table_index));
+            let new_attack_value = old_value | get_attack(square, key);
+            ptr::write(table_pointer.add(table_index), new_attack_value);
         }
     }
 }
@@ -197,13 +188,13 @@ pub fn index_to_key(index: usize, bits: u32, mut mask: u64) -> u64 {
 
 #[inline]
 // Computes the offset in the attack table from the relevant occupancy bits and a given magic factor
-pub fn get_fixed_offset(key: u64, magic: u64) -> usize {
+pub fn rook_offset(key: u64, magic: u64) -> usize {
     (key.overflowing_mul(magic).0 >> (64 - 12)) as usize
 }
 
 #[inline]
 // Computes the offset in the attack table from the relevant occupancy bits and a given magic factor
-pub fn get_fixed_offset_bishop(key: u64, magic: u64) -> usize {
+pub fn bishop_offset(key: u64, magic: u64) -> usize {
     (key.overflowing_mul(magic).0 >> (64 - 9)) as usize
 }
 
@@ -215,7 +206,7 @@ pub fn get_fixed_offset_bishop(key: u64, magic: u64) -> usize {
 // contains 46909 entries and represent ~375 kB
 //
 #[allow(clippy::unreadable_literal)]
-pub const ROOK_MAGIC: [(u64, usize); 64] = [
+const ROOK_MAGIC: [(u64, usize); 64] = [
     ( 0x80280013ff84ffff,  10890 ),
     ( 0x5ffbfefdfef67fff,  56054 ),
     ( 0xffeffaffeffdffff,  67495 ),
@@ -279,11 +270,11 @@ pub const ROOK_MAGIC: [(u64, usize); 64] = [
     ( 0xeeffffeff0080bfe,  84192 ),
     ( 0xafe0000fff780402,  33433 ),
     ( 0xee73fffbffbb77fe,   8555 ),
-    ( 0x0002000308482882,   1009),
+    ( 0x0002000308482882,   1009 ),
     ]; // End of rook magic factors
 
 #[allow(clippy::unreadable_literal)]
-pub const BISHOP_MAGIC: [(u64, usize); 64] = [
+const BISHOP_MAGIC: [(u64, usize); 64] = [
     ( 0x107ac08050500bff,  66157 ),
     ( 0x7fffdfdfd823fffd,  71730 ),
     ( 0x0400c00fe8000200,  37781 ),

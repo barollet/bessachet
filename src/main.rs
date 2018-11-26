@@ -1,6 +1,7 @@
 #![feature(reverse_bits)]
 
 #[macro_use] extern crate enum_primitive;
+#[macro_use] extern crate lazy_static;
 
 mod board;
 mod move_generation;
@@ -10,13 +11,13 @@ use board::Board;
 
 use utils::*;
 
-use move_generation::init_magic_tables;
+//use move_generation::init_magic_tables;
 
 use move_generation::*;
 use board::*;
 
 fn main() {
-    init_magic_tables();
+    //init_magic_tables();
 
     println!("Magic table loaded");
 
@@ -26,8 +27,6 @@ fn main() {
     println!("board size {}", std::mem::size_of::<[Option<Piece>; 64]>());
 
     let mut board = Board::initial_position();
-
-    board.castling_rights &= REMOVE_QUEEN_SIDE_CASTLING_RIGHTS[Color::WHITE];
 
     for mov in board.possible_moves() {
         println!("{}", mov);

@@ -46,12 +46,12 @@ pub struct HalfBoard {
 }
 
 // [black mask, white mask]
-pub const REMOVE_ALL_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0011, 0b1100);
-pub const REMOVE_QUEEN_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0111, 0b1101);
-pub const REMOVE_KING_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1011, 0b1110);
+const REMOVE_ALL_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0011, 0b1100);
+const REMOVE_QUEEN_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0111, 0b1101);
+const REMOVE_KING_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1011, 0b1110);
 
-const KING_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0100, 0b0001);
-const QUEEN_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1000, 0b0010);
+pub const KING_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0100, 0b0001);
+pub const QUEEN_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1000, 0b0010);
 
 // A HalfBoard holds the current position with the point of view of White or Black
 // Both pov think they are white so the move generation is white to move only for
@@ -207,7 +207,6 @@ impl Board {
         // Capture
         // Not triggered by en passant capture
         if let Some(captured_piece) = mov.get_captured_piece() {
-            //println!("Capture");
             self.delete_piece(mov.destination_square(), captured_piece, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
@@ -231,7 +230,6 @@ impl Board {
 
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            //println!("EP Capture");
             self.delete_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
@@ -240,7 +238,6 @@ impl Board {
         // Castling, move the other rook
         // Castling rights are removed when the king moves
         if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(self.side_to_move) {
-            //println!("Castle");
             self.move_piece(rook_from_square, rook_dest_square, Piece::ROOK, Color::WHITE, side_to_move);
         }
 
@@ -250,7 +247,6 @@ impl Board {
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
-            //println!("Promotion");
             self.delete_piece(mov.destination_square(), Piece::PAWN, Color::WHITE, side_to_move);
             self.create_piece(mov.destination_square(), promotion_piece, Color::WHITE, side_to_move);
 
@@ -258,10 +254,8 @@ impl Board {
         }
         // Castling rights update
         if moved_piece == Piece::KING {
-            //println!("King moved");
             self.castling_rights &= REMOVE_ALL_CASTLING_RIGHTS[self.side_to_move];
         } else if moved_piece == Piece::ROOK {
-            //println!("Rook moved");
             if mov.origin_square() == KING_CASTLE_ROOK_ORIGIN_SQUARES[self.side_to_move] {
                 self.castling_rights &= REMOVE_KING_SIDE_CASTLING_RIGHTS[self.side_to_move];
             } else if mov.origin_square() == QUEEN_CASTLE_ROOK_ORIGIN_SQUARES[self.side_to_move] {
@@ -283,24 +277,20 @@ impl Board {
 
         // Capture
         if let Some(captured_piece) = mov.get_captured_piece() {
-            //println!("Remove Capture");
             self.create_piece(mov.destination_square(), captured_piece, Color::BLACK, side_that_played);
         }
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            //println!("Remove EP Capture");
             self.create_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_that_played);
         }
 
         // Castling, move the other rook
         if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(side_that_played) {
-            //println!("Remove Castle");
             self.move_piece(rook_dest_square, rook_from_square, Piece::ROOK, Color::WHITE, side_that_played);
         }
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
-            //println!("Remove Promotion");
             self.delete_piece(mov.origin_square(), promotion_piece, Color::WHITE, side_that_played);
             self.create_piece(mov.origin_square(), Piece::PAWN, Color::WHITE, side_that_played);
         }
@@ -344,7 +334,7 @@ impl Board {
     }
 
     // Decorates a move with the irreversible states of the board
-    // s.a. en passant, castling rights and halfmove clock
+    // i.e. en passant, castling rights and halfmove clock
     #[inline]
     pub fn decorate_move(&self, mov: Move) -> Move {
         mov.set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET)
@@ -352,38 +342,6 @@ impl Board {
             .set_board_state(self[Color::WHITE].en_passant.map_or(0, |square| square.0), EN_PASSANT_SQUARE_BITS_OFFSET)
             .set_board_state(self.halfmove_clock, HALFMOVE_CLOCK_BITS_OFFSET)
     }
-
-    // This is a bit of move generation logic but castling checks are not exactly the same
-    // depending on the side
-    // All the move generation logic apart from caslting rights is in move_generation.rs
-    #[inline]
-    pub fn can_king_castle(&self) -> bool {
-        (self.castling_rights & KING_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle kingside
-        && (KING_CASTLE_EMPTY[self.side_to_move] & self[self.side_to_move].occupied_squares() == 0) // none of the squares on the way are occupied
-        && (KING_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square.transpose(), self.side_to_move.transpose()))) // squares crossed by the king are in check
-    }
-
-    #[inline]
-    pub fn can_queen_castle(&self) -> bool {
-        (self.castling_rights & QUEEN_CASTLING_RIGHTS_MASKS[self.side_to_move] != 0) // right to castle queenside
-        && (QUEEN_CASTLE_EMPTY[self.side_to_move] & self[self.side_to_move].occupied_squares() == 0) // none of the squares on the way are occupied
-        && (QUEEN_CASTLE_CHECK[self.side_to_move].all(|square| !self.is_in_check(square.transpose(), self.side_to_move.transpose()))) // squares crossed by the king are in check
-    }
-
-    // Castling moves are only encoding the king move
-    pub fn castling(&self) -> impl Iterator <Item = Move> + '_ {
-        if self.can_king_castle() {
-            Some(KING_CASTLE_MOVES[self.side_to_move])
-        } else {
-            None
-        }.into_iter().chain(if self.can_queen_castle() {
-            Some(QUEEN_CASTLE_MOVES[self.side_to_move])
-        } else {
-            None
-        }.into_iter())
-    }
-
-    // End of caslting logic
 
     // returns if the given square is checked by a piece of the given color
     // TODO do it "efficiently" with only attacks and not pawn pushs

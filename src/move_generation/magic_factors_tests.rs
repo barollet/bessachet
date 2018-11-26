@@ -1,7 +1,6 @@
 // This module is testing the precomputed table for sliding attacks
 
 use move_generation::{
-    init_magic_tables,
     MagicEntry,
     BISHOP_ATTACK_TABLE,
     ROOK_ATTACK_TABLE,
@@ -11,7 +10,7 @@ use move_generation::init_magic:: {
     index_to_key,
     rook_mask, bishop_mask,
     rook_attack, bishop_attack,
-    get_fixed_offset, get_fixed_offset_bishop,
+    rook_offset, bishop_offset,
 };
 
 fn key_iterator(mask: u64) -> impl Iterator<Item = u64> {
@@ -45,9 +44,9 @@ fn test_magic_entry(entry: &MagicEntry, attack_function: &Fn(u64) -> u64, bishop
     let mut keys: [u64; 4096] = [0; 4096];
     for (i, key) in key_iterator(!entry.black_mask).enumerate() {
         let offset = if bishop {
-            get_fixed_offset_bishop(key, entry.magic)
+            bishop_offset(key, entry.magic)
         } else {
-            get_fixed_offset(key, entry.magic)
+            rook_offset(key, entry.magic)
         };
         // pass if no unwanted collision without all the precedent ones
         for j in 0..i {
@@ -84,19 +83,12 @@ fn magic_key_generation() {
 #[ignore]
 // Test that we have no overlapping between different attack sets
 fn magic_no_bad_overlapping() {
-
-    init_magic_tables();
-
     // bishop collisions
     for square in 0..64 {
-        unsafe {
-            test_magic_entry(&BISHOP_ATTACK_TABLE[square], &|key| bishop_attack(square as u8, key), true);
-        }
+        test_magic_entry(&BISHOP_ATTACK_TABLE[square], &|key| bishop_attack(square as u8, key), true);
     }
     // rook collisions
     for square in 0..64 {
-        unsafe {
-            test_magic_entry(&ROOK_ATTACK_TABLE[square], &|key| rook_attack(square as u8, key), false);
-        }
+        test_magic_entry(&ROOK_ATTACK_TABLE[square], &|key| rook_attack(square as u8, key), false);
     }
 }
