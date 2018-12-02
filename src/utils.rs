@@ -76,6 +76,7 @@ impl<T> IndexMut<Color> for BlackWhiteAttribute<T> {
 pub const ROW_2: BitBoard = BitBoard::new(0xff00);
 pub const ROW_5: BitBoard = BitBoard::new(0x000000ff00000000);
 pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
+pub const ROW_8: BitBoard = BitBoard::new(0xff00000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
 
@@ -131,6 +132,16 @@ impl Square {
     #[inline]
     pub fn forward(self) -> Self {
         Square(self.0 + 8)
+    }
+
+    #[inline]
+    pub fn forward_left(self) -> Self {
+        Square(self.0 + 9)
+    }
+
+    #[inline]
+    pub fn forward_right(self) -> Self {
+        Square(self.0 + 7)
     }
 
     #[inline]

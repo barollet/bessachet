@@ -12,12 +12,13 @@ fn perft(board: &mut Board, depth: u8) -> usize {
     if depth == 0 {
         return 1;
     }
-    let moves: Vec<_> = board.possible_moves().collect();
+    let mut generator = board.create_legal_move_generator();
+    let moves: Vec<_> = generator.collect();
     let mut sum = 0;
     for mov in moves {
         board.make(mov);
 
-        if !board.is_king_checked() {
+        if !generator.is_king_checked() {
             sum += perft(board, depth-1);
             if depth == 7 {
                 println!("{} {}: {}", mov, mov.transpose(), perft(board, depth-1));

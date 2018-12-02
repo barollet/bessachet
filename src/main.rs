@@ -28,11 +28,6 @@ fn main() {
 
     let mut board = Board::initial_position();
 
-    for mov in board.possible_moves() {
-        println!("{}", mov);
-        println!("{}", mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE));
-    }
-
     //let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
 }
 

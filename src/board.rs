@@ -27,7 +27,7 @@ use move_generation::*;
 pub struct Board {
     halfboards: BlackWhiteAttribute<HalfBoard>, // The same position from black and white pov
 
-    pub castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
+    castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
     halfmove_clock: u8,
 
     pub side_to_move: Color,
@@ -84,7 +84,7 @@ impl HalfBoard {
         board
     }
 
-    fn empty_board() -> Self {
+    pub fn empty_board() -> Self {
         Self {
             pieces:    [BitBoard::new(0); 6],
             occupancy: BlackWhiteAttribute::new(BitBoard::empty(), BitBoard::empty()),
@@ -166,33 +166,30 @@ impl Transpose for HalfBoard {
 }
 
 impl Board {
-    // Returns a board representing the initial position
+    // Returns a board representing a given position
     // Two halfboards and initial parameters
-    pub fn initial_position() -> Self {
+    pub fn init_from_position(position: &HalfBoard, castling_rights: u8, halfmove_clock: u8, side_to_move: Color) -> Self {
+        let black_pov = position.clone();
+        let white_pov = position.clone().transpose();
         Board {
-            halfboards: BlackWhiteAttribute::new(HalfBoard::initial_position().transpose(), // Black pov
-                                                 HalfBoard::initial_position()),            // White pov
+            halfboards: BlackWhiteAttribute::new(black_pov, white_pov),
 
-            halfmove_clock: 0,
-            castling_rights: 0b1111,
+            halfmove_clock,
+            castling_rights,
 
-            side_to_move: Color::WHITE,
+            side_to_move,
         }
+    }
+
+    pub fn initial_position() -> Self {
+        Self::init_from_position(&HalfBoard::initial_position(), 0b1111, 0, Color::WHITE)
     }
 
     fn empty_board() -> Self {
-        Board {
-            halfboards: BlackWhiteAttribute::new(HalfBoard::empty_board(),  // Black pov
-                                                 HalfBoard::empty_board()), // White pov
-
-            halfmove_clock: 0,
-            castling_rights: 0,
-
-            side_to_move: Color::WHITE,
-        }
+        Self::init_from_position(&HalfBoard::empty_board(), 0, 0, Color::WHITE)
     }
 
-    // For make and unmake, we assume that the provided move is valid
+    // For make and unmake procedure, we assume that the provided move is valid
     // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, mov: Move) {
         let side_to_move = self.side_to_move;
@@ -296,14 +293,15 @@ impl Board {
         }
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
-        // En passant square is given from white pov
+        // En passant square is given from the side that played pov
         let en_passant_square = mov.get_board_state(EN_PASSANT_SQUARE_BITS_OFFSET, EN_PASSANT_SQUARE_BITS_SIZE);
-        self[Color::WHITE].en_passant = if en_passant_square != 0 {
+        self[side_that_played].en_passant = if en_passant_square != 0 {
             Some(Square::new(en_passant_square))
         } else {
             None
         };
-        self[Color::BLACK].en_passant = self[Color::WHITE].en_passant.map(|square| square.transpose());
+        let side_to_move = self.side_to_move;
+        self[side_to_move].en_passant = self[side_that_played].en_passant.map(|square| square.transpose());
 
         self.halfmove_clock = mov.get_board_state(HALFMOVE_CLOCK_BITS_OFFSET, HALFMOVE_CLOCK_BITS_SIZE);
         self.castling_rights = mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE);
@@ -333,20 +331,17 @@ impl Board {
         self[player_color.transpose()].move_piece(from.transpose(), to.transpose(), moved_piece, piece_color.transpose());
     }
 
-    // Decorates a move with the irreversible states of the board
-    // i.e. en passant, castling rights and halfmove clock
-    #[inline]
-    pub fn decorate_move(&self, mov: Move) -> Move {
-        mov.set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET)
-            // En passant square is given from white pov
-            .set_board_state(self[Color::WHITE].en_passant.map_or(0, |square| square.0), EN_PASSANT_SQUARE_BITS_OFFSET)
-            .set_board_state(self.halfmove_clock, HALFMOVE_CLOCK_BITS_OFFSET)
+    // Creates a LegalMoveGenerator for the side to move
+    pub fn create_legal_move_generator(&mut self) -> LegalMoveGenerator {
+        let side_to_move = self.side_to_move;
+        LegalMoveGenerator::new(&self.halfboards[side_to_move], side_to_move, self.castling_rights, self.halfmove_clock)
     }
 
     // returns if the given square is checked by a piece of the given color
     // TODO do it "efficiently" with only attacks and not pawn pushs
+    /*
     pub fn is_in_check(&self, square: Square, color: Color) -> bool {
-        self[color].attack_map().any(|attacked_square| attacked_square == square)
+        self.move_generators[color].attack_map().any(|attacked_square| attacked_square == square)
     }
 
     // temporary function while the move generation is pseudo legal
@@ -358,6 +353,7 @@ impl Board {
         let king_square = (halfboard[Color::WHITE] & halfboard[Piece::KING]).as_square();
         self.is_in_check(king_square.transpose(), self.side_to_move)
     }
+    */
 
 }
 
