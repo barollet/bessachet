@@ -332,7 +332,7 @@ impl Board {
     }
 
     // Creates a LegalMoveGenerator for the side to move
-    pub fn create_legal_move_generator(&mut self) -> LegalMoveGenerator {
+    pub fn create_legal_move_generator(&self) -> LegalMoveGenerator {
         let side_to_move = self.side_to_move;
         LegalMoveGenerator::new(&self.halfboards[side_to_move], side_to_move, self.castling_rights, self.halfmove_clock)
     }

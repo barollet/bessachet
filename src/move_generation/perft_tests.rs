@@ -12,15 +12,17 @@ fn perft(board: &mut Board, depth: u8) -> usize {
     if depth == 0 {
         return 1;
     }
-    let mut generator = board.create_legal_move_generator();
+    let generator = board.create_legal_move_generator();
     let moves: Vec<_> = generator.collect();
     let mut sum = 0;
     for mov in moves {
         board.make(mov);
 
-        if !generator.is_king_checked() {
+        // TODO remove this when the move generation is legal
+        if !generator.is_king_checked(&board[board.side_to_move.transpose()])
+        {
             sum += perft(board, depth-1);
-            if depth == 7 {
+            if depth == 5 {
                 println!("{} {}: {}", mov, mov.transpose(), perft(board, depth-1));
             }
         }
@@ -32,12 +34,12 @@ fn perft(board: &mut Board, depth: u8) -> usize {
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
-    assert_eq!(perft(&mut board, 6), 119_060_324);
-    //assert_eq!(perft(&mut board, 5), 4_865_609);
+    //assert_eq!(perft(&mut board, 6), 119_060_324);
+    assert_eq!(perft(&mut board, 5), 4_865_609);
     //assert_eq!(perft(&mut board, 4), 197_281);
     //assert_eq!(perft(&mut board, 3), 8902);
     //assert_eq!(perft(&mut board, 2), 400);
