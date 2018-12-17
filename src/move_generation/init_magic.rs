@@ -186,13 +186,11 @@ pub fn index_to_key(index: usize, bits: u32, mut mask: u64) -> u64 {
     result
 }
 
-#[inline]
 // Computes the offset in the attack table from the relevant occupancy bits and a given magic factor
 pub fn rook_offset(key: u64, magic: u64) -> usize {
     (key.overflowing_mul(magic).0 >> (64 - 12)) as usize
 }
 
-#[inline]
 // Computes the offset in the attack table from the relevant occupancy bits and a given magic factor
 pub fn bishop_offset(key: u64, magic: u64) -> usize {
     (key.overflowing_mul(magic).0 >> (64 - 9)) as usize

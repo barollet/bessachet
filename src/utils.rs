@@ -112,77 +112,63 @@ pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> = BlackW
 pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> = BlackWhiteAttribute::new(E1_SQUARE, D1_SQUARE);
 
 impl Square {
-    #[inline]
     pub const fn new(square: u8) -> Self {
         Square(square)
     }
 
     // Creates a square from file and rank between 0 and 7
-    #[inline]
     pub const fn from_file_rank(file: u8, rank: u8) -> Self {
         Square(8*rank + (7-file))
     }
 
     // Returns the square behind (1 row below)
-    #[inline]
     pub fn behind(self) -> Self {
         Square(self.0 - 8)
     }
 
-    #[inline]
     pub fn forward(self) -> Self {
         Square(self.0 + 8)
     }
 
-    #[inline]
     pub fn forward_left(self) -> Self {
         Square(self.0 + 9)
     }
 
-    #[inline]
     pub fn forward_right(self) -> Self {
         Square(self.0 + 7)
     }
 
-    #[inline]
     pub fn behind_left(self) -> Self {
         Square(self.0 - 7)
     }
 
-    #[inline]
     pub fn behind_right(self) -> Self {
         Square(self.0 - 9)
     }
 
     // Creates a square from file and rank between 0 and 7
-    #[inline]
     pub const fn from_char_file_rank(file: char, rank: char) -> Self {
         Self::from_file_rank(file as u8 - b'a', rank as u8 - b'1')
     }
 
     // Returns the rank between 0 and 7
-    #[inline]
     pub fn rank(self) -> u8 {
         self.0 / 8
     }
 
     // Returns the file between 0 and 7
-    #[inline]
     pub fn file(self) -> u8 {
         7 - self.0 % 8
     }
 
-    #[inline]
     pub fn rank_file(self) -> (u8, u8) {
         (self.rank(), self.file())
     }
 
-    #[inline]
     pub const fn as_bitboard(self) -> BitBoard {
         BitBoard::new(1 << self.0)
     }
 
-    #[inline]
     pub fn as_index(self) -> usize {
         self.0 as usize
     }
@@ -195,14 +181,12 @@ pub trait Transpose {
 }
 
 impl Transpose for Square {
-    #[inline]
     fn transpose(&self) -> Self {
         Square(63 - self.0)
     }
 }
 
 impl Transpose for Color {
-    #[inline]
     fn transpose(&self) -> Self {
         match self {
             Color::BLACK => Color::WHITE,

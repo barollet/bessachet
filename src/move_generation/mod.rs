@@ -58,6 +58,7 @@ fn init_sliding_attack_tables() -> [u64; SLIDING_ATTACK_TABLE_SIZE] {
         //MagicEntry::fill_attack_table(&mut attack_table, square);
         fill_attack_table(&mut attack_table, square);
     }
+    println!("Magic table loaded");
     attack_table
 }
 
@@ -93,30 +94,33 @@ pub fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
     sliding_attack(magic_entry, occupancy, bishop_offset)
 }
 
-// A Move is a 64 bits word following more or the less the extended
+// An ExtendedMove is a 64 bits word following more or the less the extended
 // representation in https://www.chessprogramming.org/Encoding_Moves
 // MSB -------------------------------------------------------- LSB
-// latter   | ep5 .. ep0 | hf6 .. hf0 | csl3 .. csl0 | pc3 .. pc0
-// 63 .. 39 |  38 .. 32 |x| 30 .. 24  |  23  ..  20  | 19  ..  16
-// pc3 .. pc0 | prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
-// 19  .. 16  |  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
+// latter   | ep5 .. ep0 | hf6 .. hf0 | csl3 .. csl0
+// 63 .. 39 |  34 .. 28  |  27 .. 20  |  19  ..  16
+// Move structure
+// prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
+//  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
 // TODO change the Move structure to a short Move structure and an ExtendedMove with all the
 // decoration
 #[derive(Clone, Copy)]
-pub struct Move(u64);
+pub struct Move(u16);
+#[derive(Clone, Copy)]
+pub struct ExtendedMove(u64);
 
-const SPECIAL0_FLAG: u64 = 1 << 12;
-const SPECIAL1_FLAG: u64 = 1 << 13;
-const CAPTURE_FLAG: u64 = 1 << 14;
-const PROMOTION_FLAG: u64 = 1 << 15;
+const SPECIAL0_FLAG: u16 = 1 << 12;
+const SPECIAL1_FLAG: u16 = 1 << 13;
+const CAPTURE_FLAG: u16 = 1 << 14;
+const PROMOTION_FLAG: u16 = 1 << 15;
 
-const FLAGS_RANGE: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG | CAPTURE_FLAG | PROMOTION_FLAG;
+const FLAGS_RANGE: u16 = SPECIAL0_FLAG | SPECIAL1_FLAG | CAPTURE_FLAG | PROMOTION_FLAG;
 
-const DOUBLE_PUSH_FLAG: u64 = SPECIAL0_FLAG;
-const EN_PASSANT_CAPTURE_FLAG: u64 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
+const DOUBLE_PUSH_FLAG: u16 = SPECIAL0_FLAG;
+const EN_PASSANT_CAPTURE_FLAG: u16 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
 
-const KING_CASTLE_FLAG: u64 = SPECIAL1_FLAG;
-const QUEEN_CASTLE_FLAG: u64 = SPECIAL0_FLAG | SPECIAL1_FLAG;
+const KING_CASTLE_FLAG: u16 = SPECIAL1_FLAG;
+const QUEEN_CASTLE_FLAG: u16 = SPECIAL0_FLAG | SPECIAL1_FLAG;
 
 // [black castle, white castle]
 pub const KING_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
@@ -129,9 +133,9 @@ pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::n
 
 pub const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
 
-pub const CASTLING_RIGHTS_BITS_OFFSET: u8 = 20;
-pub const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 24;
-pub const EN_PASSANT_SQUARE_BITS_OFFSET: u8 = 32;
+pub const CASTLING_RIGHTS_BITS_OFFSET: u8 = 16;
+pub const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 20;
+pub const EN_PASSANT_SQUARE_BITS_OFFSET: u8 = 28;
 
 pub const CASTLING_RIGHTS_BITS_SIZE: u8 = 4;
 pub const HALFMOVE_CLOCK_BITS_SIZE: u8 = 7;
@@ -139,102 +143,58 @@ pub const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
 
 impl Move {
     // Creates a simple move with no side effect
-    #[inline]
-    pub fn quiet_move(from: Square, to: Square) -> Self {
-        Move(u64::from(from.0) + (u64::from(to.0) << 6))
+    fn quiet_move(from: Square, to: Square) -> Self {
+        Move(u16::from(from.0) + (u16::from(to.0) << 6))
     }
 
     // Creates a move with all the specified flags
-    #[inline]
-    fn tactical_move(from: Square, to: Square, flags: u64) -> Self {
+    fn tactical_move(from: Square, to: Square, flags: u16) -> Self {
         Self::quiet_move(from, to).set_flags(flags)
     }
 
     // This is supposed to be called only for constant compilation and not an runtime
-    #[inline]
     #[allow(clippy::cast_lossless)]
     const fn raw_new(from: Square, to: Square) -> Self {
-        Move(from.0 as u64 + ((to.0 as u64) << 6))
+        Move(from.0 as u16 + ((to.0 as u16) << 6))
     }
 
     // Helper to set some flags to the move
-    #[inline]
-    const fn set_flags(self, flags: u64) -> Self {
+    const fn set_flags(self, flags: u16) -> Self {
         Move(self.0 | flags)
     }
 
-    // Set the captured piece for unmaking routine
-    #[inline]
-    fn set_captured_piece(self, piece: Piece) -> Self {
-        Move(self.0 | ((piece as u64 & 0xf) << 16))
-    }
-
-    #[inline]
-    fn set_captured_piece_from(self, board: &HalfBoard) -> Self {
-        let captured_piece = board[self.destination_square()].unwrap();
-        self.set_captured_piece(captured_piece)
-    }
-
     // Returns wether the move has the given flags set
-    #[inline]
-    fn has_flags(self, flags: u64) -> bool {
+    fn has_flags(self, flags: u16) -> bool {
         self.0 & flags != 0
     }
 
-    #[inline]
-    fn has_exact_flags(self, flags: u64) -> bool {
+    fn has_exact_flags(self, flags: u16) -> bool {
         self.0 & FLAGS_RANGE == flags
     }
 
-    #[inline]
     fn set_promoted_piece(self, piece: Piece) -> Self {
-        Move(self.0 | (piece as u64 & 0b11) << 12)
-    }
-
-    #[inline]
-    // value has to have trailing zeros not to overwrite some other states
-    pub fn set_board_state(self, value: u8, state: u8) -> Self {
-        Move(self.0 | u64::from(value) << state)
-    }
-
-    #[inline]
-    pub fn get_board_state(self, state: u8, size: u8) -> u8 {
-        ((self.0 >> state) & (u64::max_value() >> (64-size))) as u8
+        Move(self.0 | (piece as u16 & 0b11) << 12)
     }
 
     // Public interface for the board
-    #[inline]
     pub fn origin_square(self) -> Square {
         Square::new((self.0 & 0x3f) as u8)
     }
 
-    #[inline]
     pub fn destination_square(self) -> Square {
         Square::new((self.0 >> 6) as u8 & 0x3f)
     }
 
-    #[inline]
     pub fn get_promotion_piece(self) -> Option<Piece> {
         if self.has_flags(PROMOTION_FLAG) {
             // from_u32 returns an Option, panic!s if the piece code is invalid
-            Piece::from_u64(self.0 >> 12 & 0b11)
-        } else {
-            None
-        }
-    }
-
-    // This is not triggered by en passant capture which has its own making and unmaking procedure
-    #[inline]
-    pub fn get_captured_piece(self) -> Option<Piece> {
-        if self.has_flags(CAPTURE_FLAG) && !self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) {
-            Piece::from_u64(self.0 >> 16 & 0xf)
+            Piece::from_u16(self.0 >> 12 & 0b11)
         } else {
             None
         }
     }
 
     // if the move is a double pawn push, returns the associated en passant target square
-    #[inline]
     pub fn get_en_passant_target_square(self) -> Option<Square> {
         if self.has_exact_flags(DOUBLE_PUSH_FLAG) {
             Some(self.destination_square())
@@ -244,7 +204,6 @@ impl Move {
     }
 
     // If this is a castling move, returns the from and to squares of the associated tower
-    #[inline]
     pub fn get_castling_rook(self, side_to_move: Color) -> Option<(Square, Square)> {
         if self.has_exact_flags(KING_CASTLE_FLAG) {
             Some((KING_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move], KING_CASTLE_ROOK_DEST_SQUARES[side_to_move]))
@@ -256,13 +215,33 @@ impl Move {
     }
 
     // If this is an en passant capture, returns the captured pawn square
-    #[inline]
     pub fn get_en_passant_capture_square(self) -> Option<Square> {
         if self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) {
             Some(self.destination_square().behind())
         } else {
             None
         }
+    }
+
+    // Not triggered by en passant capture
+    pub fn is_capture(self) -> bool {
+        self.has_flags(CAPTURE_FLAG) & !self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG)
+    }
+}
+
+impl ExtendedMove {
+    pub fn get_raw_move(self) -> Move {
+        #[allow(clippy::cast_lossless)]
+        Move(self.0 as u16)
+    }
+
+    // value has to have trailing zeros not to overwrite some other states
+    pub fn set_board_state(self, value: u8, state: u8) -> Self {
+        ExtendedMove(self.0 | u64::from(value) << state)
+    }
+
+    pub fn get_board_state(self, state: u8, size: u8) -> u8 {
+        ((self.0 >> state) & (u64::max_value() >> (64-size))) as u8
     }
 }
 
@@ -279,7 +258,18 @@ impl Transpose for Move {
         let dest_square = self.destination_square().transpose();
         let mut transposed_move = Move(self.0);
         transposed_move.0 &= !0xfff; // Clearing the old squares
-        transposed_move.0 |= u64::from(origin_square.0) + (u64::from(dest_square.0) << 6);
+        transposed_move.0 |= u16::from(origin_square.0) + (u16::from(dest_square.0) << 6);
+
+        transposed_move
+    }
+}
+
+impl Transpose for ExtendedMove {
+    fn transpose(&self) -> Self {
+        let mov = self.get_raw_move();
+        let mut transposed_move = ExtendedMove(self.0);
+        transposed_move.0 &= !0xffff;
+        transposed_move.0 |= u64::from(mov.transpose().0);
 
         transposed_move
     }
@@ -345,14 +335,12 @@ impl LegalMoveGenerator {
     }
 
     // Pushs the given move in the move stack
-    #[inline]
     fn push(&mut self, pushed_move: Move) {
         self.move_stack[self.last_move] = pushed_move;
         self.last_move += 1;
     }
 
     // Helper to push all the possible promotions
-    #[inline]
     fn push_promotions(&mut self, promotion_move: Move) {
         for promoted_piece in &AVAILABLE_PROMOTION {
             self.push(promotion_move.set_promoted_piece(*promoted_piece));
@@ -360,8 +348,8 @@ impl LegalMoveGenerator {
     }
 
     // Decorates the next move to be fetched for iteration with irreversible states
-    fn decorate_move(&self, mov: Move) -> Move {
-        mov
+    fn decorate_move(&self, mov: Move) -> ExtendedMove {
+        ExtendedMove(u64::from(mov.0))
             .set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET)
             // En passant square is given from the side to play pov
             .set_board_state(self.en_passant.map_or(0, |square| square.0), EN_PASSANT_SQUARE_BITS_OFFSET)
@@ -406,23 +394,23 @@ impl LegalMoveGenerator {
         let right_capture_moves = (pawns & !FILE_H) << 7 & board[Color::BLACK];
         // Capture without promotions
         for capture_square in left_capture_moves & !ROW_8 {
-            self.push(Move::tactical_move(capture_square.behind_right(), capture_square, CAPTURE_FLAG).set_captured_piece_from(board));
+            self.push(Move::tactical_move(capture_square.behind_right(), capture_square, CAPTURE_FLAG));
         }
         for capture_square in right_capture_moves & !ROW_8 {
-            self.push(Move::tactical_move(capture_square.behind_left(), capture_square, CAPTURE_FLAG).set_captured_piece_from(board));
+            self.push(Move::tactical_move(capture_square.behind_left(), capture_square, CAPTURE_FLAG));
         }
         // Capture with promotion
         for capture_square in left_capture_moves & ROW_8 {
-            self.push_promotions(Move::tactical_move(capture_square.behind_right(), capture_square, CAPTURE_FLAG).set_captured_piece_from(board));
+            self.push_promotions(Move::tactical_move(capture_square.behind_right(), capture_square, CAPTURE_FLAG | PROMOTION_FLAG));
         }
         for capture_square in right_capture_moves & ROW_8 {
-            self.push_promotions(Move::tactical_move(capture_square.behind_left(), capture_square, CAPTURE_FLAG).set_captured_piece_from(board));
+            self.push_promotions(Move::tactical_move(capture_square.behind_left(), capture_square, CAPTURE_FLAG | PROMOTION_FLAG));
         }
         // -----------------------------------------
 
         // En passant capture ----------------------
         for pawn_origin_square in en_passant_capture_start_square(board.en_passant) & pawns {
-            self.push(Move::tactical_move(pawn_origin_square, board.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG).set_captured_piece(Piece::PAWN));
+            self.push(Move::tactical_move(pawn_origin_square, board.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG));
         }
         // -----------------------------------------
 
@@ -469,11 +457,10 @@ impl LegalMoveGenerator {
     }
 
     // Helper for pieces that can perform captures and quiet moves at the same time
-    #[inline]
     fn push_captures_quiets(&mut self, board: &HalfBoard, origin_square: Square, attack: BitBoard) {
         // Captures
         for capture_square in attack & board[Color::BLACK] {
-            self.push(Move::tactical_move(origin_square, capture_square, CAPTURE_FLAG).set_captured_piece_from(board));
+            self.push(Move::tactical_move(origin_square, capture_square, CAPTURE_FLAG));
         }
         // Quiet moves
         for dest_square in attack & board.empty_squares() {
@@ -482,7 +469,6 @@ impl LegalMoveGenerator {
     }
 
     // Helper for sliders
-    #[inline]
     fn sliding_attack(&mut self, board: &HalfBoard, origin_square: Square, piece_attack: fn (Square, BitBoard) -> BitBoard) {
         let attack = piece_attack(origin_square, board.occupied_squares());
         self.push_captures_quiets(board, origin_square, attack);
@@ -511,16 +497,16 @@ impl LegalMoveGenerator {
         // Knight
         KNIGHT_ATTACK_TABLE[square.as_index()] & board[Color::BLACK] & board[Piece::KNIGHT] != 0 ||
         // Pawn
-        ROW_8.has_square(square) & (
-            FILE_A.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_left()) ||
-            FILE_H.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_right())
+        !ROW_8.has_square(square) & !ROW_7.has_square(square) & (
+            !FILE_A.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_left()) ||
+            !FILE_H.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_right())
         ) ||
         // King
         KING_ATTACK_TABLE[square.as_index()] & board[Color::BLACK] & board[Piece::KING] != 0
     }
 
     // TODO Remove this when move generation is legal
-    fn is_king_checked(&self, board: &HalfBoard) -> bool {
+    pub fn is_king_checked(&self, board: &HalfBoard) -> bool {
         self.is_in_check(board, (board[Piece::KING] & board[Color::WHITE]).as_square())
     }
 
@@ -556,7 +542,7 @@ impl LegalMoveGenerator {
 
 // The iterator function is straightforward and assumes that the moves have been sorted before
 impl Iterator for LegalMoveGenerator {
-    type Item = Move;
+    type Item = ExtendedMove;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_iterator_move < self.last_move {
@@ -578,18 +564,19 @@ impl Iterator for LegalMoveGenerator {
  */
 impl Board {
 
-    /*
     // TODO remove this once move generation is working
-    pub fn get_move(&mut self, origin_file: char, origin_row: char, dest_file: char, dest_row: char) -> Move {
+    pub fn get_move(&mut self, origin_file: char, origin_row: char, dest_file: char, dest_row: char) -> ExtendedMove {
         let origin_square = Square::from_char_file_rank(origin_file, origin_row);
         let dest_square = Square::from_char_file_rank(dest_file, dest_row);
-        for mov in self.possible_moves() {
+        let generator = self.create_legal_move_generator();
+        for ext_mov in generator {
+            let mov = ext_mov.get_raw_move();
             if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
-                return mov;
+                return ext_mov;
             }
         }
         panic!("Can't find move {}{}{}{}", origin_file, origin_row, dest_file, dest_row);
-    }*/
+    }
 }
 
 fn en_passant_capture_start_square(target: Option<Square>) -> BitBoard {
@@ -606,9 +593,10 @@ fn en_passant_capture_start_square(target: Option<Square>) -> BitBoard {
 }
 
 
-impl fmt::Display for Move {
+impl fmt::Display for ExtendedMove {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}{}", self.origin_square(), self.destination_square(), match self.get_promotion_piece() {
+        let mov = self.get_raw_move();
+        write!(f, "{}{}{}", mov.origin_square(), mov.destination_square(), match mov.get_promotion_piece() {
             Some(Piece::KNIGHT) => "n",
             Some(Piece::BISHOP) => "b",
             Some(Piece::ROOK) => "r",
@@ -618,14 +606,15 @@ impl fmt::Display for Move {
     }
 }
 
-impl fmt::Debug for Move {
+impl fmt::Debug for ExtendedMove {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{} p:{} c:{} sp1:{} sp0:{}", self.origin_square(),
-                                                  self.destination_square(),
-                                                  self.has_flags(PROMOTION_FLAG),
-                                                  self.has_flags(CAPTURE_FLAG),
-                                                  self.has_flags(SPECIAL1_FLAG),
-                                                  self.has_flags(SPECIAL0_FLAG))
+        let mov = self.get_raw_move();
+        write!(f, "{}{} p:{} c:{} sp1:{} sp0:{}", mov.origin_square(),
+                                                  mov.destination_square(),
+                                                  mov.has_flags(PROMOTION_FLAG),
+                                                  mov.has_flags(CAPTURE_FLAG),
+                                                  mov.has_flags(SPECIAL1_FLAG),
+                                                  mov.has_flags(SPECIAL0_FLAG))
     }
 }
 

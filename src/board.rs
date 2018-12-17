@@ -31,6 +31,9 @@ pub struct Board {
     halfmove_clock: u8,
 
     pub side_to_move: Color,
+
+    capture_stack: [Piece; 32], // Pawns captured en passant are not but here (there is the code in the move encoding for en passant)
+    capture_stack_index: usize,
 }
 
 // The board keeps two redundant representation so the move generation is white to move only
@@ -105,24 +108,20 @@ impl HalfBoard {
         }
     }
 
-    #[inline]
     pub fn occupied_squares(&self) -> BitBoard {
         self[Color::WHITE] | self[Color::BLACK]
     }
 
-    #[inline]
     pub fn empty_squares(&self) -> BitBoard {
         !self.occupied_squares()
     }
 
     // Helper functions to make and unmake moves
-    #[inline]
     fn move_piece(&mut self, from: Square, to: Square, moved_piece: Piece, color: Color) {
         self.delete_piece(from, moved_piece, color);
         self.create_piece(to, moved_piece, color);
     }
 
-    #[inline]
     fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
         let reset_mask = !square.as_bitboard();
         self[piece] &= reset_mask;
@@ -130,7 +129,6 @@ impl HalfBoard {
         self[square] = None;
     }
 
-    #[inline]
     fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
         let set_mask = square.as_bitboard();
         self[piece] |= set_mask;
@@ -169,8 +167,8 @@ impl Board {
     // Returns a board representing a given position
     // Two halfboards and initial parameters
     pub fn init_from_position(position: &HalfBoard, castling_rights: u8, halfmove_clock: u8, side_to_move: Color) -> Self {
-        let black_pov = position.clone();
-        let white_pov = position.clone().transpose();
+        let white_pov = position.clone();
+        let black_pov = position.clone().transpose();
         Board {
             halfboards: BlackWhiteAttribute::new(black_pov, white_pov),
 
@@ -178,6 +176,9 @@ impl Board {
             castling_rights,
 
             side_to_move,
+
+            capture_stack: [Piece::PAWN; 32], // Initialized with pawns by default even if it should be empty
+            capture_stack_index: 0,
         }
     }
 
@@ -191,8 +192,9 @@ impl Board {
 
     // For make and unmake procedure, we assume that the provided move is valid
     // If not the program can panic! or remain in an unconsistent state
-    pub fn make(&mut self, mov: Move) {
+    pub fn make(&mut self, ext_mov: ExtendedMove) {
         let side_to_move = self.side_to_move;
+        let mov = ext_mov.get_raw_move();
         let moved_piece = self[side_to_move][mov.origin_square()].unwrap();
 
         self.halfmove_clock = if moved_piece == Piece::PAWN {
@@ -203,7 +205,8 @@ impl Board {
 
         // Capture
         // Not triggered by en passant capture
-        if let Some(captured_piece) = mov.get_captured_piece() {
+        if mov.is_capture() {
+            let captured_piece = self[side_to_move][mov.destination_square()].unwrap();
             self.delete_piece(mov.destination_square(), captured_piece, Color::BLACK, side_to_move);
 
             self.halfmove_clock = 0;
@@ -220,6 +223,8 @@ impl Board {
                     self.castling_rights &= REMOVE_QUEEN_SIDE_CASTLING_RIGHTS[Color::WHITE];
                 }
             }
+
+            self.push_captured(captured_piece);
         }
 
         // We move the piece after the capture
@@ -265,15 +270,17 @@ impl Board {
 
     // Unmake the given move, if the move was played by White, the board must be in Black side to
     // play state (and vice versa)
-    pub fn unmake(&mut self, mov: Move) {
+    pub fn unmake(&mut self, ext_mov: ExtendedMove) {
         // Move the piece back
         let side_that_played = self.side_to_move.transpose();
+        let mov = ext_mov.get_raw_move();
         let moved_piece = self[side_that_played][mov.destination_square()].unwrap();
 
         self.move_piece(mov.destination_square(), mov.origin_square(), moved_piece, Color::WHITE, side_that_played);
 
         // Capture
-        if let Some(captured_piece) = mov.get_captured_piece() {
+        if mov.is_capture() {
+            let captured_piece = self.pop_captured();
             self.create_piece(mov.destination_square(), captured_piece, Color::BLACK, side_that_played);
         }
         // En passant capture
@@ -294,7 +301,7 @@ impl Board {
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
         // En passant square is given from the side that played pov
-        let en_passant_square = mov.get_board_state(EN_PASSANT_SQUARE_BITS_OFFSET, EN_PASSANT_SQUARE_BITS_SIZE);
+        let en_passant_square = ext_mov.get_board_state(EN_PASSANT_SQUARE_BITS_OFFSET, EN_PASSANT_SQUARE_BITS_SIZE);
         self[side_that_played].en_passant = if en_passant_square != 0 {
             Some(Square::new(en_passant_square))
         } else {
@@ -303,29 +310,36 @@ impl Board {
         let side_to_move = self.side_to_move;
         self[side_to_move].en_passant = self[side_that_played].en_passant.map(|square| square.transpose());
 
-        self.halfmove_clock = mov.get_board_state(HALFMOVE_CLOCK_BITS_OFFSET, HALFMOVE_CLOCK_BITS_SIZE);
-        self.castling_rights = mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE);
+        self.halfmove_clock = ext_mov.get_board_state(HALFMOVE_CLOCK_BITS_OFFSET, HALFMOVE_CLOCK_BITS_SIZE);
+        self.castling_rights = ext_mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE);
 
 
         self.side_to_move = self.side_to_move.transpose();
     }
 
+    fn push_captured(&mut self, piece: Piece) {
+        self.capture_stack[self.capture_stack_index] = piece;
+        self.capture_stack_index += 1;
+    }
+
+    fn pop_captured(&mut self) -> Piece {
+        self.capture_stack_index -= 1;
+        self.capture_stack[self.capture_stack_index]
+    }
+
     // Creates a piece of the given color on the given player's board (on black board, black has
     // white pieces)
-    #[inline]
     fn create_piece(&mut self, square: Square, piece: Piece, piece_color: Color, player_color: Color) {
         self[player_color].create_piece(square, piece, piece_color);
         self[player_color.transpose()].create_piece(square.transpose(), piece, piece_color.transpose());
     }
 
-    #[inline]
     fn delete_piece(&mut self, square: Square, piece: Piece, piece_color: Color, player_color: Color) {
         self[player_color].delete_piece(square, piece, piece_color);
         self[player_color.transpose()].delete_piece(square.transpose(), piece, piece_color.transpose());
     }
 
     // This moves a piece of the given side color
-    #[inline]
     fn move_piece(&mut self, from: Square, to: Square, moved_piece: Piece, piece_color: Color, player_color: Color) {
         self[player_color].move_piece(from, to, moved_piece, piece_color);
         self[player_color.transpose()].move_piece(from.transpose(), to.transpose(), moved_piece, piece_color.transpose());
@@ -509,12 +523,10 @@ impl Board {
     }
 }
 
-
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct BitBoard(pub u64);
 
 impl BitBoard {
-    #[inline]
     pub const fn new(bitboard: u64) -> Self {
         BitBoard(bitboard)
     }
@@ -523,27 +535,23 @@ impl BitBoard {
         BitBoard(0)
     }
 
-    #[inline]
     pub fn as_square(self) -> Square {
         Square(self.0.trailing_zeros() as u8)
     }
 
     // Returns the bitboard containing only the LSB and removes it
-    #[inline]
     pub fn pop_lsb_as_square(&mut self) -> Square {
         let singly_populated_bitboard = self.0 & self.0.overflowing_neg().0;
         self.0 ^= singly_populated_bitboard;
         BitBoard(singly_populated_bitboard).as_square()
     }
 
-    #[inline]
     pub fn has_square(self, square: Square) -> bool {
         self & square.as_bitboard() != 0
     }
 }
 
 impl Transpose for BitBoard {
-    #[inline]
     fn transpose(&self) -> Self {
         BitBoard(self.0.reverse_bits())
     }
@@ -722,6 +730,15 @@ impl fmt::Display for HalfBoard {
             writeln!(f)?;
         }
         writeln!(f)
+    }
+}
+
+impl fmt::Debug for Board {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "WHITE")?;
+        writeln!(f, "{:?}", self[Color::WHITE])?;
+        writeln!(f, "BLACK")?;
+        writeln!(f, "{:?}", self[Color::BLACK])
     }
 }
 

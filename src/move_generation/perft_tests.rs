@@ -6,8 +6,7 @@ use board::Board;
 
 use utils::*;
 
-// Runs a perft test of the given depth on the given board
-fn perft(board: &mut Board, depth: u8) -> usize {
+fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
     // TODO Bulk gen when legal moves are ready
     if depth == 0 {
         return 1;
@@ -21,10 +20,11 @@ fn perft(board: &mut Board, depth: u8) -> usize {
         // TODO remove this when the move generation is legal
         if !generator.is_king_checked(&board[board.side_to_move.transpose()])
         {
-            sum += perft(board, depth-1);
-            if depth == 5 {
-                println!("{} {}: {}", mov, mov.transpose(), perft(board, depth-1));
+            let partial_sum = internal_perft(board, depth-1, start_depth);
+            if depth == start_depth {
+                println!("{} {}: {}", mov, mov.transpose(), partial_sum);
             }
+            sum += partial_sum;
         }
 
         board.unmake(mov);
@@ -33,13 +33,19 @@ fn perft(board: &mut Board, depth: u8) -> usize {
     sum
 }
 
+// Runs a perft test of the given depth on the given board
+fn perft(board: &mut Board, depth: u8) -> usize {
+    assert!(depth > 0);
+    internal_perft(board, depth, depth)
+}
+
 #[test]
-//#[ignore]
+#[ignore]
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
-    //assert_eq!(perft(&mut board, 6), 119_060_324);
-    assert_eq!(perft(&mut board, 5), 4_865_609);
+    assert_eq!(perft(&mut board, 6), 119_060_324);
+    //assert_eq!(perft(&mut board, 5), 4_865_609);
     //assert_eq!(perft(&mut board, 4), 197_281);
     //assert_eq!(perft(&mut board, 3), 8902);
     //assert_eq!(perft(&mut board, 2), 400);
