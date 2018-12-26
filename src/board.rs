@@ -653,7 +653,7 @@ impl fmt::Display for Board {
                     write!(f, "*")?;
                 }
             }
-            write!(f, "   ");
+            write!(f, "   ")?;
             let halfboard = &self[Color::BLACK];
             for j in (0..8).rev() {
                 if let Some(piece) = halfboard.board_88[8*i + j] {

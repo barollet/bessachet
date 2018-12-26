@@ -1,7 +1,8 @@
 #![allow(clippy::unreadable_literal)]
 
 use std::fmt;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Sub, Div, Rem};
+use std::cmp::{max, min};
 
 use board::BitBoard;
 
@@ -174,6 +175,28 @@ impl Square {
     }
 }
 
+// Sub returns the distance between two squares as a u8
+impl Sub for Square {
+    type Output = u8;
+    fn sub(self, other: Square) -> Self::Output {
+        max(self.0, other.0) - min(self.0, other.0)
+    }
+}
+
+// TODO maybe change this to row and file
+impl Rem<u8> for Square {
+    type Output = Square;
+    fn rem(self, rhs: u8) -> Self::Output {
+        Square(self.0 % rhs)
+    }
+}
+
+impl Div<u8> for Square {
+    type Output = Square;
+    fn div(self, rhs: u8) -> Self::Output {
+        Square(self.0 / rhs)
+    }
+}
 // Transpose trait is for objects that can be transposed into the other player pov.
 // Actually the trait is never used as a trait but just for readability
 pub trait Transpose {
