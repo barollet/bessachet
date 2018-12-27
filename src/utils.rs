@@ -2,7 +2,7 @@
 
 use std::fmt;
 use std::ops::{Index, IndexMut, Sub, Div, Rem};
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 
 use board::BitBoard;
 
@@ -41,10 +41,10 @@ impl Piece {
     }
 }
 
-pub static AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
-pub static PIECES_LIST: [Piece; 6] = [ Piece::PAWN, Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN, Piece::KING ];
+pub const AVAILABLE_PROMOTION: [Piece; 4] = [ Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN ];
+pub const PIECES_LIST: [Piece; 6] = [ Piece::PAWN, Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN, Piece::KING ];
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Square(pub u8);
 
 // This is an array of size 2 indexable by Color to obtain an attribute that is color dependant
@@ -180,6 +180,18 @@ impl Sub for Square {
     type Output = u8;
     fn sub(self, other: Square) -> Self::Output {
         max(self.0, other.0) - min(self.0, other.0)
+    }
+}
+
+impl Ord for Square {
+    fn cmp(&self, other: &Square) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for Square {
+    fn partial_cmp(&self, other: &Square) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

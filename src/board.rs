@@ -535,6 +535,10 @@ impl BitBoard {
         BitBoard(0)
     }
 
+    pub const fn full() -> Self {
+        BitBoard(u64::max_value())
+    }
+
     pub fn as_square(self) -> Square {
         Square(self.0.trailing_zeros() as u8)
     }

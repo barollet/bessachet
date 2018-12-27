@@ -136,9 +136,11 @@ pub struct LegalMoveGenerator {
     // Pinned pieces are stored along the 4 directions diagonal, antidiagonal, vertical and
     // horizontal
     // We hold the squares that are can pin and no more than 2 pieces can be pinned on the same
-    // direction
-    pinners: [[Square; 2]; 4],
-    number_of_pinners: [usize; 4], // pinners stack indexes (basically a usize for 0 1 2)
+    // direction, there is also the bitboard of the liberties of the pinned piece (to be
+    // intersected with the actual moves of the piece)
+    pinned_pieces: [(Square, BitBoard); 8],
+    number_of_pinned_pieces: usize, // pinners stack indexes (basically a usize for 0 1 2)
+    free_pieces: BitBoard, // A global pin mask to quickly get if a piece is pinned or free
     // next move on the stack
     last_move: usize,
     // iterator index
@@ -151,12 +153,13 @@ pub struct LegalMoveGenerator {
     halfmove_clock: u8,
 }
 
-
+/*
 type Direction = usize;
 const VERTICAL: Direction = 0;
 const HORIZONTAL: Direction = 1;
 const DIAGONAL: Direction = 2;
 const ANTIDIAGONAL: Direction = 3;
+*/
 
 impl LegalMoveGenerator {
     // Initialize a new LegalMoveGenerator by computing pinned pieces
@@ -165,8 +168,9 @@ impl LegalMoveGenerator {
         let mut generator = Self {
             move_stack: [NULL_MOVE; 128], // Placeholder
 
-            pinners: [[A1_SQUARE; 2]; 4], // Placeholder
-            number_of_pinners: [0; 4],
+            pinned_pieces: [(A1_SQUARE, BitBoard::empty()); 8], // Placeholder
+            number_of_pinned_pieces: 0,
+            free_pieces: BitBoard::full(),
 
             last_move: 0,
             next_iterator_move: 0,
@@ -182,21 +186,49 @@ impl LegalMoveGenerator {
         generator
     }
 
-    // Computes the direction of a pin and push it
-    fn push_pinner(&mut self, pinner_square: Square, target_square: Square) {
-        // Computes the direction
-        let direction = if pinner_square / 8 == target_square / 8 {
-            HORIZONTAL
-        } else if pinner_square % 8 == target_square % 8 {
-            VERTICAL
-        } else if (target_square - pinner_square) % 7 == 0 {
-            DIAGONAL
+    fn bishop_pin_offset(pinner_square: Square, target_square: Square) -> u8 {
+        let distance = target_square - pinner_square;
+        if distance % 9 == 0 {
+            // Antidiagonal
+            9
         } else {
-            ANTIDIAGONAL
-        };
-        // Push the pin
-        self.pinners[direction][self.number_of_pinners[direction]] = pinner_square;
-        self.number_of_pinners[direction] += 1;
+            // Diagonal
+            7
+        }
+    }
+
+    fn rook_pin_offset(pinner_square: Square, target_square: Square) -> u8 {
+        if target_square % 8 == pinner_square % 8 {
+            // Vertical
+            8
+        } else {
+            // Horizontal
+            1
+        }
+    }
+
+    fn push_pinned_piece(&mut self, board: &HalfBoard,
+                         pinner_square: Square,
+                         target_square: Square,
+                         offset_function: fn(Square, Square) -> u8) {
+        let distance = target_square - pinner_square;
+        let offset = offset_function(pinner_square, target_square);
+        // + 1 is for overlapping with both target and pinner square
+        // the target square is removed afterward
+        let size = distance / offset + 1;
+
+        let base = ((1 << (offset*size)) - 1) / ((1 << offset) - 1);
+        let pin_mask = BitBoard::new(base << std::cmp::min(target_square, pinner_square).0);
+
+        // remove the target square
+        let pin_mask = pin_mask & !target_square.as_bitboard();
+        // get the pinned piece
+        let pinned_square = (pin_mask & board[Color::WHITE]).as_square();
+
+        // updates the pin datastructure
+        self.pinned_pieces[self.number_of_pinned_pieces] = (pinned_square, pin_mask);
+        self.number_of_pinned_pieces += 1;
+        self.free_pieces &= !pin_mask;
     }
 
     fn compute_pinners(&mut self, board: &HalfBoard) {
@@ -205,14 +237,14 @@ impl LegalMoveGenerator {
         for bishop_square in (board[Piece::BISHOP] | board[Piece::QUEEN]) & board[Color::BLACK] {
             let xray_attack = bishop_xray_attack(bishop_square, board.occupied_squares());
             if xray_attack.has_square(white_king_square) {
-                self.push_pinner(bishop_square, white_king_square);
+                self.push_pinned_piece(board, bishop_square, white_king_square, Self::bishop_pin_offset);
             }
         }
         // Pinned by a rook move
         for rook_square in (board[Piece::ROOK] | board[Piece::QUEEN]) & board[Color::BLACK] {
             let xray_attack = rook_xray_attack(rook_square, board.occupied_squares());
             if xray_attack.has_square(white_king_square) {
-                self.push_pinner(rook_square, white_king_square);
+                self.push_pinned_piece(board, rook_square, white_king_square, Self::rook_pin_offset);
             }
         }
     }
@@ -327,12 +359,6 @@ impl LegalMoveGenerator {
         for promoted_piece in &AVAILABLE_PROMOTION {
             self.push(promotion_move.set_promoted_piece(*promoted_piece));
         }
-    }
-
-    // Checks if the given square is pinned along the given direction
-    fn is_pinned(&self, square: Square, direction: Direction) -> bool {
-        (0..self.number_of_pinners[direction])
-            .any(|i| self.pinners[direction][i] == square)
     }
 
     // Decorates the next move to be fetched for iteration with irreversible states
