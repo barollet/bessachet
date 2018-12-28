@@ -121,6 +121,7 @@ fn bishop_xray_attack(square: Square, occupancy: BitBoard) -> BitBoard {
 // reference to both of them to make them communicate)
 // Pinned pieces are computed on the fly (Black slider's attack can be computed by the White
 // move generation)
+// TODO Escaping checks
 // TODO Evaluation interface
 // Most information fetching is lazy so this creates branching but hopefully we gain some
 // computation time
@@ -133,9 +134,8 @@ pub struct LegalMoveGenerator {
     // maybe we have to change this to 218 in the future
 
     // Internals
-    // Pinned pieces are stored along the 4 directions diagonal, antidiagonal, vertical and
-    // horizontal
-    // We hold the squares that are can pin and no more than 2 pieces can be pinned on the same
+    // TODO checkers to escape
+    // We hold the squares that are pinned and no more than 2 pieces can be pinned on the same
     // direction, there is also the bitboard of the liberties of the pinned piece (to be
     // intersected with the actual moves of the piece)
     pinned_pieces: [(Square, BitBoard); 8],
@@ -223,12 +223,17 @@ impl LegalMoveGenerator {
         // remove the target square
         let pin_mask = pin_mask & !target_square.as_bitboard();
         // get the pinned piece
-        let pinned_square = (pin_mask & board[Color::WHITE]).as_square();
-
-        // updates the pin datastructure
-        self.pinned_pieces[self.number_of_pinned_pieces] = (pinned_square, pin_mask);
-        self.number_of_pinned_pieces += 1;
-        self.free_pieces &= !pin_mask;
+        // empty if check and no pin TODO checks to escape
+        let pinned_square = pin_mask & board[Color::WHITE];
+        if pinned_square != BitBoard::empty() {
+            let pinned_square = pinned_square.as_square();
+            // updates the pin datastructure
+            self.pinned_pieces[self.number_of_pinned_pieces] = (pinned_square, pin_mask);
+            self.number_of_pinned_pieces += 1;
+            self.free_pieces &= !pin_mask;
+        } else {
+            // TODO Check
+        }
     }
 
     fn compute_pinners(&mut self, board: &HalfBoard) {
