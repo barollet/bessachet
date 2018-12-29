@@ -134,13 +134,15 @@ pub struct LegalMoveGenerator {
     // maybe we have to change this to 218 in the future
 
     // Internals
-    // TODO checkers to escape
     // We hold the squares that are pinned and no more than 2 pieces can be pinned on the same
     // direction, there is also the bitboard of the liberties of the pinned piece (to be
     // intersected with the actual moves of the piece)
     pinned_pieces: [(Square, BitBoard); 8],
     number_of_pinned_pieces: usize, // pinners stack indexes (basically a usize for 0 1 2)
     free_pieces: BitBoard, // A global pin mask to quickly get if a piece is pinned or free
+    // checkers
+    checkers: [Square; 2],
+    number_of_checkers: usize,
     // next move on the stack
     last_move: usize,
     // iterator index
@@ -172,6 +174,9 @@ impl LegalMoveGenerator {
             number_of_pinned_pieces: 0,
             free_pieces: BitBoard::full(),
 
+            checkers: [A1_SQUARE; 2], // PLaceholder
+            number_of_checkers: 0,
+
             last_move: 0,
             next_iterator_move: 0,
             en_passant: halfboard.en_passant,
@@ -179,7 +184,7 @@ impl LegalMoveGenerator {
             halfmove_clock,
         };
         // we compute pinned pieces and store the result for evaluation
-        generator.compute_pinners(halfboard);
+        generator.compute_pinned_pieces(halfboard);
         // fetch basic moves information
         generator.fetch_possible_moves(halfboard, color);
 
@@ -232,11 +237,12 @@ impl LegalMoveGenerator {
             self.number_of_pinned_pieces += 1;
             self.free_pieces &= !pin_mask;
         } else {
-            // TODO Check
+            self.checkers[self.number_of_checkers] = pinner_square;
+            self.number_of_checkers += 1;
         }
     }
 
-    fn compute_pinners(&mut self, board: &HalfBoard) {
+    fn compute_pinned_pieces(&mut self, board: &HalfBoard) {
         let white_king_square = (board[Piece::KING] & board[Color::WHITE]).as_square();
         // Pinned by a bishop move
         for bishop_square in (board[Piece::BISHOP] | board[Piece::QUEEN]) & board[Color::BLACK] {
@@ -259,6 +265,7 @@ impl LegalMoveGenerator {
     // TODO fetch only captures first and then quiet moves to make it lazier
     // ------------------------------------------------
     fn fetch_possible_moves(&mut self, board: &HalfBoard, color: Color) {
+        let free_pieces = board[Color::WHITE] & self.free_pieces;
         // Simple pawn push ------------------------
         let pawns = board[Piece::PAWN] & board[Color::WHITE];
         let pushed_pawns = (pawns << 8) & board.empty_squares();
