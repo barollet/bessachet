@@ -174,7 +174,7 @@ impl LegalMoveGenerator {
             number_of_pinned_pieces: 0,
             free_pieces: BitBoard::full(),
 
-            checkers: [A1_SQUARE; 2], // PLaceholder
+            checkers: [A1_SQUARE; 2], // Placeholder
             number_of_checkers: 0,
 
             last_move: 0,
@@ -185,8 +185,20 @@ impl LegalMoveGenerator {
         };
         // we compute pinned pieces and store the result for evaluation
         generator.compute_pinned_pieces(halfboard);
-        // fetch basic moves information
-        generator.fetch_possible_moves(halfboard, color);
+        if generator.number_of_checkers == 0 {
+            // Fetch basic moves
+            generator.fetch_possible_moves(halfboard, color);
+        } else {
+            generator.move_king_in_safe_place(halfboard);
+            if generator.number_of_checkers == 1 {
+                let checking_square = generator.checkers[0];
+                let white_king_square = halfboard[Color::WHITE] & halfboard[Piece::KING];
+                // Capture the checking piece
+                generator.push_moves_to_capture(halfboard, checking_square);
+                // Block the attack if it is sliding
+                generator.push_moves_to_block_slider(halfboard, checking_square, white_king_square);
+            }
+        }
 
         generator
     }
@@ -226,7 +238,7 @@ impl LegalMoveGenerator {
         let pin_mask = BitBoard::new(base << std::cmp::min(target_square, pinner_square).0);
 
         // remove the target square
-        let pin_mask = pin_mask & !target_square.as_bitboard();
+        let pin_mask = pin_mask.remove_square(target_square);
         // get the pinned piece
         // empty if check and no pin TODO checks to escape
         let pinned_square = pin_mask & board[Color::WHITE];
@@ -267,7 +279,7 @@ impl LegalMoveGenerator {
     fn fetch_possible_moves(&mut self, board: &HalfBoard, color: Color) {
         let free_pieces = board[Color::WHITE] & self.free_pieces;
         // Simple pawn push ------------------------
-        let pawns = board[Piece::PAWN] & board[Color::WHITE];
+        let pawns = board[Piece::PAWN] & free_pieces;
         let pushed_pawns = (pawns << 8) & board.empty_squares();
 
         // No promotion
@@ -281,7 +293,7 @@ impl LegalMoveGenerator {
         // -----------------------------------------
 
         // Double push, sets en passant flag -------
-        let starting_pawns = board[Piece::PAWN] & board[Color::WHITE] & ROW_2;
+        let starting_pawns = board[Piece::PAWN] & free_pieces & ROW_2;
 
         // To be double pushed, the pawns have to be able to move once forward
         let simple_pushed_pawns = (starting_pawns << 8) & board.empty_squares();
@@ -315,31 +327,33 @@ impl LegalMoveGenerator {
 
         // En passant capture ----------------------
         for pawn_origin_square in en_passant_capture_start_square(board.en_passant) & pawns {
-            self.push(Move::tactical_move(pawn_origin_square, board.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG));
+            if board[board.en_passant.unwrap().forward()].is_none() {
+                self.push(Move::tactical_move(pawn_origin_square, board.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG));
+            }
         }
         // -----------------------------------------
 
         // Knights moves ---------------------------
-        for knight_square in board[Piece::KNIGHT] & board[Color::WHITE] {
+        for knight_square in board[Piece::KNIGHT] & free_pieces {
             let attack = KNIGHT_ATTACK_TABLE[knight_square.as_index()];
             self.push_captures_quiets(board, knight_square, attack);
         }
         // -----------------------------------------
 
         // Bishop moves ----------------------------
-        for bishop_square in board[Piece::BISHOP] & board[Color::WHITE] {
+        for bishop_square in board[Piece::BISHOP] & free_pieces {
             self.sliding_attack(board, bishop_square, bishop_attack);
         }
         // -----------------------------------------
 
         // Rook moves ------------------------------
-        for rook_square in board[Piece::ROOK] & board[Color::WHITE] {
+        for rook_square in board[Piece::ROOK] & free_pieces {
             self.sliding_attack(board, rook_square, rook_attack);
         }
         // -----------------------------------------
 
         // Queen moves -----------------------------
-        for queen_square in board[Piece::QUEEN] & board[Color::WHITE] {
+        for queen_square in board[Piece::QUEEN] & free_pieces {
             self.sliding_attack(board, queen_square, bishop_attack);
             self.sliding_attack(board, queen_square, rook_attack);
         }
@@ -347,9 +361,7 @@ impl LegalMoveGenerator {
 
         // King moves ------------------------------
         // Moves
-        let king_square = (board[Piece::KING] & board[Color::WHITE]).as_square();
-        let attack = KING_ATTACK_TABLE[king_square.as_index()];
-        self.push_captures_quiets(board, king_square, attack);
+        self.move_king_in_safe_place(board);
         // Castle
         if self.can_king_castle(board, color) {
             self.push(KING_CASTLE_MOVES[color]);
@@ -358,6 +370,70 @@ impl LegalMoveGenerator {
             self.push(QUEEN_CASTLE_MOVES[color])
         }
         // -----------------------------------------
+
+        // Moves of pinned pieces ------------------
+        // TODO optimize pinned piece move computation
+        // TODO better borrow checker management
+        for (_i, (pinned_square, pin_mask)) in (0..self.number_of_pinned_pieces).zip(&self.pinned_pieces.clone()) {
+            if let Some(pinned_piece) = board[*pinned_square] {
+                match pinned_piece {
+                    Piece::PAWN => {
+                        // NOTE pinned pawns can never promote
+                        // Simple push
+                        let forward_square = pinned_square.forward();
+                        if board[forward_square].is_none() && pin_mask.has_square(forward_square) {
+                            self.push(Move::quiet_move(*pinned_square, forward_square)); 
+                            // Double push
+                            if ROW_2.has_square(*pinned_square) {
+                                let double_push_square = forward_square.forward();
+                                // Here we don't have to check the pin mask
+                                if board[double_push_square].is_none() {
+                                    self.push(Move::quiet_move(*pinned_square, double_push_square)
+                                              .set_flags(DOUBLE_PUSH_FLAG));
+                                }
+                            }
+                        }
+                        // Left capture
+                        let capture_left_square = pinned_square.forward_left();
+                        if board[Color::BLACK].has_square(capture_left_square)
+                            && pin_mask.has_square(capture_left_square) {
+                                self.push(Move::tactical_move(*pinned_square, capture_left_square, CAPTURE_FLAG));
+                        }
+                        // Right capture
+                        let capture_right_square = pinned_square.forward_right();
+                        if board[Color::BLACK].has_square(capture_right_square)
+                            && pin_mask.has_square(capture_right_square) {
+                                self.push(Move::tactical_move(*pinned_square, capture_right_square, CAPTURE_FLAG));
+                        }
+                    },
+                    Piece::BISHOP =>
+                        self.pinned_sliding_attack(board, *pinned_square, *pin_mask, bishop_attack),
+                    Piece::ROOK =>
+                        self.pinned_sliding_attack(board, *pinned_square, *pin_mask, rook_attack),
+                    Piece::QUEEN => {
+                        self.pinned_sliding_attack(board, *pinned_square, *pin_mask, bishop_attack);
+                        self.pinned_sliding_attack(board, *pinned_square, *pin_mask, rook_attack);
+                    },
+                    Piece::KNIGHT => (), // Knights cannot move if pinned
+                    Piece::KING => panic!("King shouldn't be pinned")
+                }
+            } else {
+                panic!("A pin is pinning no piece");
+            }
+        }
+        // -----------------------------------------
+    }
+
+    fn move_king_in_safe_place(&mut self, board: &HalfBoard) {
+        let king_square = (board[Piece::KING] & board[Color::WHITE]).as_square();
+        let attack = KING_ATTACK_TABLE[king_square.as_index()];
+        // TODO do this for cheaper
+        for dest_square in attack {
+            if self.is_in_check(board, dest_square) {
+                attack.remove_square(dest_square);
+            }
+        }
+        self.push_captures_quiets(board, king_square, attack);
     }
 
     // Pushs the given move in the move stack
@@ -400,6 +476,11 @@ impl LegalMoveGenerator {
         self.push_captures_quiets(board, origin_square, attack);
     }
 
+    fn pinned_sliding_attack(&mut self, board: &HalfBoard, origin_square: Square, pin_mask: BitBoard, piece_attack: fn (Square, BitBoard) -> BitBoard) {
+        let attack = piece_attack(origin_square, board.occupied_squares()) & pin_mask;
+        self.push_captures_quiets(board, origin_square, attack);
+    }
+
     // Castling
     fn can_king_castle(&self, board: &HalfBoard, color: Color) -> bool {
         (self.castling_rights & KING_CASTLING_RIGHTS_MASKS[color] != 0) // right to castle kingside
@@ -416,18 +497,70 @@ impl LegalMoveGenerator {
     // Uses a super piece (not to rely on the other side move generator)
     fn is_in_check(&self, board: &HalfBoard, square: Square) -> bool {
         // Rook
-        rook_attack(square, board.occupied_squares()) & board[Color::BLACK] & (board[Piece::ROOK] | board[Piece::QUEEN]) != 0 ||
+        rook_attack(square, board.occupied_squares()) & board[Color::BLACK]
+            & (board[Piece::ROOK] | board[Piece::QUEEN]) != 0 ||
         // Bishop
-        bishop_attack(square, board.occupied_squares()) & board[Color::BLACK] & (board[Piece::BISHOP] | board[Piece::QUEEN]) != 0 ||
+        bishop_attack(square, board.occupied_squares()) & board[Color::BLACK]
+            & (board[Piece::BISHOP] | board[Piece::QUEEN]) != 0 ||
         // Knight
         KNIGHT_ATTACK_TABLE[square.as_index()] & board[Color::BLACK] & board[Piece::KNIGHT] != 0 ||
         // Pawn
         !ROW_8.has_square(square) & !ROW_7.has_square(square) & (
-            !FILE_A.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_left()) ||
-            !FILE_H.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_right())
+            !FILE_A.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN])
+                .has_square(square.forward_left()) ||
+            !FILE_H.has_square(square) & (board[Color::BLACK] & board[Piece::PAWN])
+                .has_square(square.forward_right())
         ) ||
         // King
         KING_ATTACK_TABLE[square.as_index()] & board[Color::BLACK] & board[Piece::KING] != 0
+    }
+
+    // Pushes the moves that capture the given square
+    fn push_moves_to_capture(&mut self, board: &HalfBoard, captured_square: Square) {
+        // Rook
+        let mut can_capture = rook_attack(captured_square, board.occupied_squares()) & board[Color::WHITE]
+            & (board[Piece::ROOK] | board[Piece::QUEEN]);
+        // Bishop
+        can_capture |= bishop_attack(captured_square, board.occupied_squares()) & board[Color::WHITE]
+            & (board[Piece::BISHOP] | board[Piece::QUEEN]);
+        // Knight
+        can_capture |= KNIGHT_ATTACK_TABLE[captured_square.as_index()] & board[Color::WHITE] & board[Piece::KNIGHT];
+        // If the captured square is not in check, the King can capture
+        if !self.is_in_check(board, captured_square) {
+            can_capture |= KING_ATTACK_TABLE[captured_square.as_index()]
+                & board[Color::WHITE] & board[Piece::KING];
+        }
+        let pawn_simple_captures = (captured_square.behind_right().as_bitboard()
+                & board[Color::WHITE] & board[Piece::PAWN])
+            | (captured_square.behind_left().as_bitboard()
+                & board[Color::WHITE] & board[Piece::PAWN]);
+        // Pawn simple capture or promotion
+        if !ROW_8.has_square(captured_square) {
+            can_capture |= pawn_simple_captures;
+        } else {
+            // Promotion
+            for capturing_square in can_capture {
+                self.push_promotions(
+                    Move::tactical_move(capturing_square, captured_square,
+                                        CAPTURE_FLAG | PROMOTION_FLAG));
+            }
+        }
+
+        // En passant capture
+        if self.en_passant.is_some() && self.en_passant.unwrap() == captured_square {
+            for capturing_square in en_passant_capture_start_square(self.en_passant)
+                & board[Color::WHITE] & board[Piece::PAWN] {
+                if board[captured_square.forward()].is_none() {
+                    self.push(Move::tactical_move(capturing_square, captured_square.forward(),
+                    EN_PASSANT_CAPTURE_FLAG)); 
+                }
+            }
+        }
+
+        // Push the basic moves
+        for capturing_square in can_capture {
+            self.push(Move::tactical_move(capturing_square, captured_square, CAPTURE_FLAG))      
+        }
     }
 
     // TODO Remove this when move generation is legal
@@ -509,6 +642,8 @@ fn en_passant_capture_start_square(target: Option<Square>) -> BitBoard {
         if EN_PASSANT_TARGET_LINE.has_square(square) {
             EN_PASSANT_TABLE[(square.0 - 32) as usize]
         } else {
+            panic!("coucou from en passant");
+            // TODO remove this
             BitBoard::empty()
         }
     } else {
@@ -568,6 +703,7 @@ fn generate_knight_attacks() -> [BitBoard; 64] {
 
         for (i, j) in &knight_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
+                *attack_bitboard |= Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
                 *attack_bitboard |= Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
             }
         }
