@@ -12,8 +12,6 @@ use enum_primitive::FromPrimitive;
 // Move structure
 // prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
 //  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
-// TODO change the Move structure to a short Move structure and an ExtendedMove with all the
-// decoration
 #[derive(Clone, Copy)]
 pub struct Move(u16);
 #[derive(Clone, Copy)]
@@ -57,6 +55,13 @@ impl Move {
         Move(u16::from(from.0) + (u16::from(to.0) << 6))
     }
 
+    pub fn double_pawn_push_to(to: Square) -> Self {
+        Self::tactical_move(to.behind().behind(), to, DOUBLE_PUSH_FLAG)
+    }
+    pub fn double_pawn_push(from: Square, to: Square) -> Self {
+        Self::tactical_move(from, to, DOUBLE_PUSH_FLAG)
+    }
+
     // Creates a move with all the specified flags
     pub fn tactical_move(from: Square, to: Square, flags: u16) -> Self {
         Self::quiet_move(from, to).set_flags(flags)
@@ -69,7 +74,7 @@ impl Move {
     }
 
     // Helper to set some flags to the move
-    pub const fn set_flags(self, flags: u16) -> Self {
+    const fn set_flags(self, flags: u16) -> Self {
         Move(self.0 | flags)
     }
 
@@ -165,7 +170,6 @@ impl PartialEq for Move {
     }
 }
 
-// TODO clean transposition (for en passant)
 impl Transpose for Move {
     fn transpose(&self) -> Self {
         let origin_square = self.origin_square().transpose();
@@ -173,17 +177,6 @@ impl Transpose for Move {
         let mut transposed_move = Move(self.0);
         transposed_move.0 &= !0xfff; // Clearing the old squares
         transposed_move.0 |= u16::from(origin_square.0) + (u16::from(dest_square.0) << 6);
-
-        transposed_move
-    }
-}
-
-impl Transpose for ExtendedMove {
-    fn transpose(&self) -> Self {
-        let mov = self.get_raw_move();
-        let mut transposed_move = ExtendedMove(self.0);
-        transposed_move.0 &= !0xffff;
-        transposed_move.0 |= u64::from(mov.transpose().0);
 
         transposed_move
     }

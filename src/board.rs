@@ -116,6 +116,10 @@ impl HalfBoard {
         !self.occupied_squares()
     }
 
+    pub fn white_king_square(&self) -> Square {
+        (self[Color::WHITE] & self[Piece::KING]).as_square()
+    }
+
     // Helper functions to make and unmake moves
     fn move_piece(&mut self, from: Square, to: Square, moved_piece: Piece, color: Color) {
         self.delete_piece(from, moved_piece, color);
@@ -134,6 +138,15 @@ impl HalfBoard {
         self[piece] |= set_mask;
         self[color] |= set_mask;
         self[square] = Some(piece);
+    }
+
+    // Returns a bitboard of pawn candidates to capture en passant
+    pub fn en_passant_capture_start_squares(&self) -> BitBoard {
+        if let Some(square) = self.en_passant {
+            EN_PASSANT_TABLE[(square.0 - 32) as usize]
+        } else {
+            BitBoard::empty()
+        }
     }
 }
 
@@ -350,25 +363,6 @@ impl Board {
         let side_to_move = self.side_to_move;
         LegalMoveGenerator::new(&self.halfboards[side_to_move], side_to_move, self.castling_rights, self.halfmove_clock)
     }
-
-    // returns if the given square is checked by a piece of the given color
-    // TODO do it "efficiently" with only attacks and not pawn pushs
-    /*
-    pub fn is_in_check(&self, square: Square, color: Color) -> bool {
-        self.move_generators[color].attack_map().any(|attacked_square| attacked_square == square)
-    }
-
-    // temporary function while the move generation is pseudo legal
-    // We check that the color that just played hasn't leave its king in check
-    // TODO remove this because it is ugly
-    pub fn is_king_checked(&self) -> bool {
-        let side_that_played = self.side_to_move.transpose();
-        let halfboard = &self[side_that_played];
-        let king_square = (halfboard[Color::WHITE] & halfboard[Piece::KING]).as_square();
-        self.is_in_check(king_square.transpose(), self.side_to_move)
-    }
-    */
-
 }
 
 // A Board indexed by Color returns the corresponding pov of the position
@@ -539,6 +533,7 @@ impl BitBoard {
         BitBoard(u64::max_value())
     }
 
+    // Has to be called on a non empty Bitboard
     pub fn as_square(self) -> Square {
         Square(self.0.trailing_zeros() as u8)
     }
@@ -555,7 +550,13 @@ impl BitBoard {
     }
 
     pub fn remove_square(self, square: Square) -> Self {
-        self & !square.as_bitboard()
+        self.remove_squares(square.as_bitboard())
+    }
+    pub fn remove_squares(self, squares: Self) -> Self {
+        self & !squares
+    }
+    pub fn add_square(self, square: Square) -> Self {
+        self | square.as_bitboard()
     }
 }
 

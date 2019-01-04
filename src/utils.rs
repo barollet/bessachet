@@ -75,13 +75,10 @@ impl<T> IndexMut<Color> for BlackWhiteAttribute<T> {
 
 // Some constants declaration
 pub const ROW_2: BitBoard = BitBoard::new(0xff00);
-pub const ROW_5: BitBoard = BitBoard::new(0x000000ff00000000);
 pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const ROW_8: BitBoard = BitBoard::new(0xff00000000000000);
 pub const FILE_A: BitBoard = BitBoard::new(0x8080808080808080);
 pub const FILE_H: BitBoard = BitBoard::new(0x0101010101010101);
-
-pub const EN_PASSANT_TARGET_LINE: BitBoard = ROW_5;
 
 pub const A1_SQUARE: Square = Square::from_char_file_rank('a', '1');
 pub const B1_SQUARE: Square = Square::from_char_file_rank('b', '1');
@@ -92,8 +89,6 @@ pub const F1_SQUARE: Square = Square::from_char_file_rank('f', '1');
 pub const G1_SQUARE: Square = Square::from_char_file_rank('g', '1');
 pub const H1_SQUARE: Square = Square::from_char_file_rank('h', '1');
 pub const A8_SQUARE: Square = Square::from_char_file_rank('a', '8');
-pub const C8_SQUARE: Square = Square::from_char_file_rank('c', '8');
-pub const D8_SQUARE: Square = Square::from_char_file_rank('d', '8');
 pub const H8_SQUARE: Square = Square::from_char_file_rank('h', '8');
 
 // [Black masks, White masks]
@@ -123,27 +118,27 @@ impl Square {
     }
 
     // Returns the square behind (1 row below)
-    pub fn behind(self) -> Self {
+    pub const fn behind(self) -> Self {
         Square(self.0 - 8)
     }
 
-    pub fn forward(self) -> Self {
+    pub const fn forward(self) -> Self {
         Square(self.0 + 8)
     }
 
-    pub fn forward_left(self) -> Self {
+    pub const fn forward_left(self) -> Self {
         Square(self.0 + 9)
     }
 
-    pub fn forward_right(self) -> Self {
+    pub const fn forward_right(self) -> Self {
         Square(self.0 + 7)
     }
 
-    pub fn behind_left(self) -> Self {
+    pub const fn behind_left(self) -> Self {
         Square(self.0 - 7)
     }
 
-    pub fn behind_right(self) -> Self {
+    pub const fn behind_right(self) -> Self {
         Square(self.0 - 9)
     }
 
@@ -153,16 +148,16 @@ impl Square {
     }
 
     // Returns the rank between 0 and 7
-    pub fn rank(self) -> u8 {
+    pub const fn rank(self) -> u8 {
         self.0 / 8
     }
 
     // Returns the file between 0 and 7
-    pub fn file(self) -> u8 {
+    pub const fn file(self) -> u8 {
         7 - self.0 % 8
     }
 
-    pub fn rank_file(self) -> (u8, u8) {
+    pub const fn rank_file(self) -> (u8, u8) {
         (self.rank(), self.file())
     }
 
@@ -170,8 +165,47 @@ impl Square {
         BitBoard::new(1 << self.0)
     }
 
-    pub fn as_index(self) -> usize {
+    pub const fn as_index(self) -> usize {
         self.0 as usize
+    }
+}
+
+// Returns a bitboard between the two given squares included
+/*
+pub fn square_mask_included_with(from: Square, to: Square) -> BitBoard {
+    let raw_distance = from - to;
+    let offset_unit = masking_offset(from, to);
+    let length = raw_distance / offset_unit + 1;
+
+    let base = ((1 << (offset_unit*length)) - 1) / ((1 << offset_unit) - 1);
+    BitBoard::new(base << std::cmp::min(from, to).0)
+}
+*/
+
+// Returns a bitboard between the two given squares excluded
+pub fn square_mask_between(from: Square, to: Square) -> BitBoard {
+    let raw_distance = from - to;
+    let offset_unit = masking_offset(from, to);
+    let length = raw_distance / offset_unit - 1;
+
+    let base = ((1 << (offset_unit*length)) - 1) / ((1 << offset_unit) - 1);
+    BitBoard::new(base << (std::cmp::min(from, to).0 + offset_unit))
+}
+// Offsets for masking between two squares
+// TODO specialized masking for rook and bishop
+fn masking_offset(from_square: Square, target_square: Square) -> u8 {
+    if target_square % 8 == from_square % 8 {
+        // Vertical
+        8
+    } else if target_square / 8 == from_square / 8 {
+        // Horizontal
+        1
+    } else if (target_square - from_square) % 9 == 0 {
+        // Antidiagonal
+        9
+    } else {
+        // Diagonal
+        7
     }
 }
 

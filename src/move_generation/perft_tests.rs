@@ -7,30 +7,21 @@ use board::Board;
 use utils::*;
 
 fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
-    // TODO Bulk gen when legal moves are ready
-    if depth == 0 {
-        return 1;
-    }
     let generator = board.create_legal_move_generator();
-    let moves: Vec<_> = generator.collect();
-    let mut sum = 0;
-    for mov in moves {
+    if depth == 1 {
+        return generator.count();
+    }
+    generator.fold(0, |acc, mov| {
         board.make(mov);
 
-        // TODO remove this when the move generation is legal
-        if !generator.is_king_checked(&board[board.side_to_move.transpose()])
-        {
-            let partial_sum = internal_perft(board, depth-1, start_depth);
-            if depth == start_depth {
-                println!("{} {}: {}", mov, mov.transpose(), partial_sum);
-            }
-            sum += partial_sum;
+        let partial_sum = internal_perft(board, depth-1, start_depth);
+        if depth == start_depth {
+            println!("{} {}: {}", mov.get_raw_move(), mov.get_raw_move().transpose(), partial_sum);
         }
 
         board.unmake(mov);
-    }
-
-    sum
+        acc + partial_sum
+    })
 }
 
 // Runs a perft test of the given depth on the given board
