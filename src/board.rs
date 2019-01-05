@@ -548,6 +548,9 @@ impl BitBoard {
     pub fn has_square(self, square: Square) -> bool {
         self & square.as_bitboard() != 0
     }
+    pub fn has_squares(self, squares: BitBoard) -> bool {
+        self & squares != 0
+    }
 
     pub fn remove_square(self, square: Square) -> Self {
         self.remove_squares(square.as_bitboard())

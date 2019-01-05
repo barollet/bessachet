@@ -439,7 +439,12 @@ impl LegalMoveGenerator {
             }
         }
         // Pawns can promote while blocking only on an horizontal check on the last row
-        // TODO this later
+        if ROW_8.has_squares(blocker_mask) {
+            let promoting_pawns = blocker_mask >> 8 & pawns & self.free_pieces;
+            for pawn in promoting_pawns {
+                self.push_promotions_from_move(Move::tactical_move(pawn, pawn.forward(), PROMOTION_FLAG));
+            }
+        }
 
         // Other pieces -------------------------------------
         // Knight
@@ -490,8 +495,8 @@ impl LegalMoveGenerator {
             can_capture |= pawn_simple_captures;
         } else {
             // Promotion
-            // TODO check pinned
-            for capturing_square in pawn_simple_captures {
+            let pawn_promotions = pawn_simple_captures.remove_squares(!self.free_pieces);
+            for capturing_square in pawn_promotions {
                 self.push_promotions_from_move(
                     Move::tactical_move(capturing_square, captured_square,
                                         CAPTURE_FLAG | PROMOTION_FLAG));
@@ -650,7 +655,12 @@ impl LegalMoveGenerator {
                                 self.push_move(Move::tactical_move(pinned_square, capture_right_square, CAPTURE_FLAG));
                         }
                         // En passant
-                        // TODO
+                        if board.en_passant_capture_start_squares().has_square(pinned_square) {
+                            let en_passant_dest_square = board.en_passant.unwrap().forward();
+                            if pin_mask.has_square(en_passant_dest_square) {
+                                self.push_move(Move::tactical_move(pinned_square, en_passant_dest_square, EN_PASSANT_CAPTURE_FLAG));
+                            }
+                        }
                     },
                     Piece::BISHOP =>
                         self.push_pinned_slider_attack(board, pinned_square, pin_mask, bishop_attack),
