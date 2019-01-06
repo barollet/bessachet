@@ -11,9 +11,6 @@ use board::Board;
 
 use utils::*;
 
-use move_generation::*;
-use board::*;
-
 fn main() {
     println!("board size {}", std::mem::size_of::<Board>());
     println!("board size {}", std::mem::size_of::<Piece>());
@@ -21,7 +18,15 @@ fn main() {
     println!("board size {}", std::mem::size_of::<[Option<Piece>; 64]>());
 
     let mut board = Board::initial_position();
-    let mut generator = board.create_legal_move_generator();
+    println!("zobrist {}", board.zobrist_key);
+    let generator = board.create_legal_move_generator();
+
+    for mov in generator {
+        board.make(mov);
+        board.unmake(mov);
+    }
+
+    println!("zobrist {}", board.zobrist_key);
 
     board.play_move('e', '2', 'e', '3');
 

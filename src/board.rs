@@ -25,15 +25,17 @@ use move_generation::*;
 // We don't mind if the board is not super dense because we will only clone it a few times
 #[derive(Clone)]
 pub struct Board {
-    halfboards: BlackWhiteAttribute<HalfBoard>, // The same position from black and white pov
+    pub halfboards: BlackWhiteAttribute<HalfBoard>, // The same position from black and white pov
 
-    castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
+    pub castling_rights: u8, // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
     halfmove_clock: u8,
 
     pub side_to_move: Color,
 
     capture_stack: [Piece; 32], // Pawns captured en passant are not but here (there is the code in the move encoding for en passant)
     capture_stack_index: usize,
+
+    pub zobrist_key: u64,
 }
 
 // The board keeps two redundant representation so the move generation is white to move only
@@ -182,7 +184,7 @@ impl Board {
     pub fn init_from_position(position: &HalfBoard, castling_rights: u8, halfmove_clock: u8, side_to_move: Color) -> Self {
         let white_pov = position.clone();
         let black_pov = position.clone().transpose();
-        Board {
+        let mut board = Board {
             halfboards: BlackWhiteAttribute::new(black_pov, white_pov),
 
             halfmove_clock,
@@ -192,7 +194,12 @@ impl Board {
 
             capture_stack: [Piece::PAWN; 32], // Initialized with pawns by default even if it should be empty
             capture_stack_index: 0,
-        }
+
+            zobrist_key: 0,
+        };
+        board.compute_zobrist_key();
+
+        board
     }
 
     pub fn initial_position() -> Self {
@@ -259,6 +266,7 @@ impl Board {
         // Double pawn push, set the en passant target
         self[side_to_move].en_passant = mov.get_en_passant_target_square();
         self[side_to_move.transpose()].en_passant = mov.get_en_passant_target_square().map(|square| square.transpose());
+        self.update_en_passant_zobrist_key(ext_mov);
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
@@ -277,7 +285,11 @@ impl Board {
                 self.castling_rights &= REMOVE_QUEEN_SIDE_CASTLING_RIGHTS[self.side_to_move];
             }
         }
+        let new_castling_rights = self.castling_rights;
+        self.update_castling_rights_zobrist_key(ext_mov.get_castling_rights(), new_castling_rights);
 
+        // Update the side to move
+        self.update_side_to_move_zobrist_key();
         self.side_to_move = self.side_to_move.transpose();
     }
 
@@ -314,17 +326,17 @@ impl Board {
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
         // En passant square is given from the side that played pov
-        let en_passant_square = ext_mov.get_board_state(EN_PASSANT_SQUARE_BITS_OFFSET, EN_PASSANT_SQUARE_BITS_SIZE);
-        self[side_that_played].en_passant = if en_passant_square != 0 {
-            Some(Square::new(en_passant_square))
-        } else {
-            None
-        };
         let side_to_move = self.side_to_move;
+        self[side_that_played].en_passant = ext_mov.get_en_passant_target();
         self[side_to_move].en_passant = self[side_that_played].en_passant.map(|square| square.transpose());
+        self.update_en_passant_zobrist_key(ext_mov);
 
-        self.halfmove_clock = ext_mov.get_board_state(HALFMOVE_CLOCK_BITS_OFFSET, HALFMOVE_CLOCK_BITS_SIZE);
-        self.castling_rights = ext_mov.get_board_state(CASTLING_RIGHTS_BITS_OFFSET, CASTLING_RIGHTS_BITS_SIZE);
+        let old_caslting_rights = self.castling_rights;
+        let restored_castling_rights = ext_mov.get_castling_rights();
+        self.update_castling_rights_zobrist_key(old_caslting_rights, restored_castling_rights);
+
+        self.halfmove_clock = ext_mov.get_halfmove_clock();
+        self.castling_rights = restored_castling_rights;
 
 
         self.side_to_move = self.side_to_move.transpose();
@@ -343,19 +355,26 @@ impl Board {
     // Creates a piece of the given color on the given player's board (on black board, black has
     // white pieces)
     fn create_piece(&mut self, square: Square, piece: Piece, piece_color: Color, player_color: Color) {
+        self.update_piece_move_zobrist_key(square, piece, piece_color, player_color);
+
         self[player_color].create_piece(square, piece, piece_color);
         self[player_color.transpose()].create_piece(square.transpose(), piece, piece_color.transpose());
     }
 
     fn delete_piece(&mut self, square: Square, piece: Piece, piece_color: Color, player_color: Color) {
+        self.update_piece_move_zobrist_key(square, piece, piece_color, player_color);
+
         self[player_color].delete_piece(square, piece, piece_color);
         self[player_color.transpose()].delete_piece(square.transpose(), piece, piece_color.transpose());
     }
 
     // This moves a piece of the given side color
-    fn move_piece(&mut self, from: Square, to: Square, moved_piece: Piece, piece_color: Color, player_color: Color) {
-        self[player_color].move_piece(from, to, moved_piece, piece_color);
-        self[player_color.transpose()].move_piece(from.transpose(), to.transpose(), moved_piece, piece_color.transpose());
+    fn move_piece(&mut self, from: Square, to: Square, piece: Piece, piece_color: Color, player_color: Color) {
+        self.update_piece_move_zobrist_key(from, piece, piece_color, player_color);
+        self.update_piece_move_zobrist_key(to, piece, piece_color, player_color);
+
+        self[player_color].move_piece(from, to, piece, piece_color);
+        self[player_color.transpose()].move_piece(from.transpose(), to.transpose(), piece, piece_color.transpose());
     }
 
     // Creates a LegalMoveGenerator for the side to move

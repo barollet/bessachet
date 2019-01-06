@@ -155,12 +155,29 @@ impl ExtendedMove {
     }
 
     // value has to have trailing zeros not to overwrite some other states
-    pub fn set_board_state(self, value: u8, state: u8) -> Self {
-        ExtendedMove(self.0 | u64::from(value) << state)
+    pub fn set_castling_rights(self, value: u8) -> Self {
+        ExtendedMove(self.0 | u64::from(value) << CASTLING_RIGHTS_BITS_OFFSET)
+    }
+    pub fn set_halfmove_clock(self, value: u8) -> Self {
+        ExtendedMove(self.0 | u64::from(value) << HALFMOVE_CLOCK_BITS_OFFSET)
+    }
+    pub fn set_en_passant_target(self, value: u8) -> Self {
+        ExtendedMove(self.0 | u64::from(value) << EN_PASSANT_SQUARE_BITS_OFFSET)
     }
 
-    pub fn get_board_state(self, state: u8, size: u8) -> u8 {
-        ((self.0 >> state) & (u64::max_value() >> (64-size))) as u8
+    pub fn get_castling_rights(self) -> u8 {
+        ((self.0 >> CASTLING_RIGHTS_BITS_OFFSET) & (u64::max_value() >> (64-CASTLING_RIGHTS_BITS_SIZE))) as u8
+    }
+    pub fn get_halfmove_clock(self) -> u8 {
+        ((self.0 >> HALFMOVE_CLOCK_BITS_OFFSET) & (u64::max_value() >> (64-HALFMOVE_CLOCK_BITS_SIZE))) as u8
+    }
+    pub fn get_en_passant_target(self) -> Option<Square> {
+        let square = ((self.0 >> EN_PASSANT_SQUARE_BITS_OFFSET) & (u64::max_value() >> (64-EN_PASSANT_SQUARE_BITS_SIZE))) as u8;
+        if square != 0 {
+            Some(Square::new(square))
+        } else {
+            None
+        }
     }
 }
 

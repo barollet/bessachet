@@ -255,10 +255,10 @@ impl LegalMoveGenerator {
     // Decorates the next move to be fetched for iteration with irreversible states
     fn decorate_move(&self, mov: Move) -> ExtendedMove {
         ExtendedMove::from_raw_move(mov)
-            .set_board_state(self.castling_rights, CASTLING_RIGHTS_BITS_OFFSET)
+            .set_castling_rights(self.castling_rights)
             // En passant square is given from the side to play pov
-            .set_board_state(self.en_passant.map_or(0, |square| square.0), EN_PASSANT_SQUARE_BITS_OFFSET)
-            .set_board_state(self.halfmove_clock, HALFMOVE_CLOCK_BITS_OFFSET)
+            .set_en_passant_target(self.en_passant.map_or(0, |square| square.0))
+            .set_halfmove_clock(self.halfmove_clock)
     }
 }
 
