@@ -583,8 +583,24 @@ impl BitBoard {
 }
 
 impl Transpose for BitBoard {
+    #[clippy::allow(clippy::unreadable_literal)]
     fn transpose(&self) -> Self {
-        BitBoard(self.0.reverse_bits())
+        let mut x = self.0;
+
+        let h1 = 0x5555555555555555;
+        let h2 = 0x3333333333333333;
+        let h4 = 0x0F0F0F0F0F0F0F0F;
+        let v1 = 0x00FF00FF00FF00FF;
+        let v2 = 0x0000FFFF0000FFFF;
+
+        x = ((x >>  1) & h1) | ((x & h1) <<  1);
+        x = ((x >>  2) & h2) | ((x & h2) <<  2);
+        x = ((x >>  4) & h4) | ((x & h4) <<  4);
+        x = ((x >>  8) & v1) | ((x & v1) <<  8);
+        x = ((x >> 16) & v2) | ((x & v2) << 16);
+        x = ( x >> 32)       | ( x       << 32);
+
+        BitBoard(x)
     }
 }
 

@@ -2,7 +2,7 @@
 
 use utils::*;
 use board::Board;
-use move_generation::{ExtendedMove, EN_PASSANT_SQUARE_BITS_OFFSET, EN_PASSANT_SQUARE_BITS_SIZE};
+use move_generation::ExtendedMove;
 
 // A Xoroshiro Pseudo random generator
 // See: https://en.wikipedia.org/wiki/Xoroshiro128%2B

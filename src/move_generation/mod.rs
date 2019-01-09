@@ -575,10 +575,8 @@ impl LegalMoveGenerator {
 
         // En passant capture ----------------------
         for pawn_origin_square in board.en_passant_capture_start_squares() & pawns {
-            if board[board.en_passant.unwrap().forward()].is_none() {
-                if self.can_take_en_passant(board, pawn_origin_square) {
-                    self.push_move(Move::tactical_move(pawn_origin_square, board.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG));
-                }
+            if board[board.en_passant.unwrap().forward()].is_none() && self.can_take_en_passant(board, pawn_origin_square) {
+                self.push_move(Move::tactical_move(pawn_origin_square, board.en_passant.unwrap().forward(), EN_PASSANT_CAPTURE_FLAG));
             }
         }
         // -----------------------------------------

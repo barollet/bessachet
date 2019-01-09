@@ -1,5 +1,3 @@
-#![feature(reverse_bits)]
-
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate lazy_static;
 
@@ -28,8 +26,13 @@ fn main() {
 
     println!("zobrist {}", board.zobrist_key);
 
+    let bitboard = board[Color::WHITE][Piece::KING] & board[Color::WHITE][Color::WHITE];
+    println!("{:?}", bitboard);
+    println!("{:?}", bitboard.transpose());
+
     board.play_move('e', '2', 'e', '3');
 
-    //let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
+    let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
+    println!("{}", board);
 }
 
