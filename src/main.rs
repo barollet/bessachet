@@ -3,6 +3,7 @@
 
 mod board;
 mod move_generation;
+mod search;
 mod utils;
 
 use board::Board;
@@ -18,6 +19,7 @@ fn main() {
     let mut board = Board::initial_position();
     println!("zobrist {}", board.zobrist_key);
     let generator = board.create_legal_move_generator();
+    println!("{}", board.evaluation(&generator));
 
     for mov in generator {
         board.make(mov);

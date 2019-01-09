@@ -153,7 +153,7 @@ pub struct LegalMoveGenerator {
     checkers: [Square; 2],
     number_of_checkers: usize,
     // next move on the stack
-    last_move: usize,
+    number_of_legal_moves: usize,
     // iterator index
     next_iterator_move: usize,
     // copies of the caslting rights, previous en passant state and halfmove clock
@@ -179,7 +179,7 @@ impl LegalMoveGenerator {
             checkers: [A1_SQUARE; 2], // Placeholders
             number_of_checkers: 0,
 
-            last_move: 0,
+            number_of_legal_moves: 0,
             next_iterator_move: 0,
             en_passant: halfboard.en_passant,
             castling_rights,
@@ -222,8 +222,8 @@ impl LegalMoveGenerator {
 impl LegalMoveGenerator {
     // Pushs the given move in the move stack
     fn push_move(&mut self, pushed_move: Move) {
-        self.move_stack[self.last_move] = pushed_move;
-        self.last_move += 1;
+        self.move_stack[self.number_of_legal_moves] = pushed_move;
+        self.number_of_legal_moves += 1;
     }
 
     // Helper to push all the possible promotions
@@ -703,6 +703,11 @@ impl LegalMoveGenerator {
 
         attack_map
     }
+
+    // Returns the number of legal moves without consuming the iterator
+    pub fn number_of_legal_moves(&self) -> usize {
+        self.number_of_legal_moves
+    }
 }
 
 // The iterator function is straightforward and assumes that the moves have been sorted before
@@ -710,7 +715,7 @@ impl Iterator for LegalMoveGenerator {
     type Item = ExtendedMove;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next_iterator_move < self.last_move {
+        if self.next_iterator_move < self.number_of_legal_moves {
             let iter_move = self.move_stack[self.next_iterator_move];
             self.next_iterator_move += 1;
 

@@ -9,7 +9,7 @@ use utils::*;
 fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
     let generator = board.create_legal_move_generator();
     if depth == 1 {
-        return generator.count();
+        return generator.number_of_legal_moves();
     }
     generator.fold(0, |acc, mov| {
         board.make(mov);
