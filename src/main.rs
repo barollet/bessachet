@@ -1,5 +1,7 @@
-#[macro_use] extern crate enum_primitive;
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate enum_primitive;
+#[macro_use]
+extern crate lazy_static;
 
 mod board;
 mod move_generation;
@@ -19,6 +21,7 @@ fn main() {
     let mut board = Board::initial_position();
     println!("zobrist {}", board.zobrist_key);
     let generator = board.create_legal_move_generator();
+    println!("eval {}", board.evaluation(&generator));
     println!("{}", board.evaluation(&generator));
 
     for mov in generator {
@@ -34,7 +37,9 @@ fn main() {
 
     board.play_move('e', '2', 'e', '3');
 
-    let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -").unwrap();
+    let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
+        .unwrap();
+    let generator = board.create_legal_move_generator();
+    println!("eval {}", board.evaluation(&generator));
     println!("{}", board);
 }
-

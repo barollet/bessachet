@@ -1,6 +1,6 @@
 use std::fmt;
 use std::iter::FusedIterator;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Shl, Shr, Mul};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Mul, Not, Shl, Shr};
 use std::ops::{Index, IndexMut};
 
 use utils::*;
@@ -51,12 +51,17 @@ pub struct HalfBoard {
 }
 
 // [black mask, white mask]
-const REMOVE_ALL_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0011, 0b1100);
-const REMOVE_QUEEN_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0111, 0b1101);
-const REMOVE_KING_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1011, 0b1110);
+const REMOVE_ALL_CASTLING_RIGHTS: BlackWhiteAttribute<u8> =
+    BlackWhiteAttribute::new(0b0011, 0b1100);
+const REMOVE_QUEEN_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> =
+    BlackWhiteAttribute::new(0b0111, 0b1101);
+const REMOVE_KING_SIDE_CASTLING_RIGHTS: BlackWhiteAttribute<u8> =
+    BlackWhiteAttribute::new(0b1011, 0b1110);
 
-pub const KING_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b0100, 0b0001);
-pub const QUEEN_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> = BlackWhiteAttribute::new(0b1000, 0b0010);
+pub const KING_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> =
+    BlackWhiteAttribute::new(0b0100, 0b0001);
+pub const QUEEN_CASTLING_RIGHTS_MASKS: BlackWhiteAttribute<u8> =
+    BlackWhiteAttribute::new(0b1000, 0b0010);
 
 // A HalfBoard holds the current position with the point of view of White or Black
 // Both pov think they are white so the move generation is white to move only for
@@ -68,16 +73,19 @@ impl HalfBoard {
     pub fn initial_position() -> Self {
         // See utils.rs for the piece order in the array
         let mut board = Self {
-            pieces:    [BitBoard::new(0x4200000000000042),  // Knights
-                        BitBoard::new(0x2400000000000024),  // Bishops
-                        BitBoard::new(0x8100000000000081),  // Rooks
-                        BitBoard::new(0x1000000000000010),  // Queens
+            pieces: [
+                BitBoard::new(0x4200000000000042), // Knights
+                BitBoard::new(0x2400000000000024), // Bishops
+                BitBoard::new(0x8100000000000081), // Rooks
+                BitBoard::new(0x1000000000000010), // Queens
+                BitBoard::new(0x00ff00000000ff00), // Pawns
+                BitBoard::new(0x0800000000000008),
+            ], // Kings
 
-                        BitBoard::new(0x00ff00000000ff00),  // Pawns
-                        BitBoard::new(0x0800000000000008)], // Kings
-
-            occupancy: BlackWhiteAttribute::new(BitBoard::new(0xffff000000000000),  // Black
-                                                BitBoard::new(0x000000000000ffff)), // White
+            occupancy: BlackWhiteAttribute::new(
+                BitBoard::new(0xffff000000000000), // Black
+                BitBoard::new(0x000000000000ffff),
+            ), // White
 
             en_passant: None,
 
@@ -91,7 +99,7 @@ impl HalfBoard {
 
     pub fn empty_board() -> Self {
         Self {
-            pieces:    [BitBoard::new(0); 6],
+            pieces: [BitBoard::new(0); 6],
             occupancy: BlackWhiteAttribute::new(BitBoard::empty(), BitBoard::empty()),
 
             en_passant: None,
@@ -158,7 +166,9 @@ impl Transpose for HalfBoard {
         let mut transposed_halfboard = Self::empty_board();
 
         // Transposing occupation
-        for (bitboard, transposed_bitboard) in self.pieces.iter().zip(&mut transposed_halfboard.pieces) {
+        for (bitboard, transposed_bitboard) in
+            self.pieces.iter().zip(&mut transposed_halfboard.pieces)
+        {
             *transposed_bitboard = bitboard.transpose();
         }
 
@@ -170,7 +180,11 @@ impl Transpose for HalfBoard {
         transposed_halfboard.en_passant = self.en_passant.map(|square| square.transpose());
 
         // Transposing the 8x8 array representation
-        for (square, transposed_square) in self.board_88.iter().zip(transposed_halfboard.board_88.iter_mut().rev()) {
+        for (square, transposed_square) in self
+            .board_88
+            .iter()
+            .zip(transposed_halfboard.board_88.iter_mut().rev())
+        {
             *transposed_square = *square;
         }
 
@@ -178,10 +192,24 @@ impl Transpose for HalfBoard {
     }
 }
 
+impl Transpose for Board {
+    fn transpose(&self) -> Self {
+        let mut transposed_board = self.clone();
+        transposed_board.side_to_move = transposed_board.side_to_move.transpose();
+
+        transposed_board
+    }
+}
+
 impl Board {
     // Returns a board representing a given position
     // Two halfboards and initial parameters
-    pub fn init_from_position(position: &HalfBoard, castling_rights: u8, halfmove_clock: u8, side_to_move: Color) -> Self {
+    pub fn init_from_position(
+        position: &HalfBoard,
+        castling_rights: u8,
+        halfmove_clock: u8,
+        side_to_move: Color,
+    ) -> Self {
         let white_pov = position.clone();
         let black_pov = position.clone().transpose();
         let mut board = Board {
@@ -220,14 +248,19 @@ impl Board {
         self.halfmove_clock = if moved_piece == Piece::PAWN {
             0
         } else {
-            self.halfmove_clock+1
+            self.halfmove_clock + 1
         };
 
         // Capture
         // Not triggered by en passant capture
         if mov.is_capture() {
             let captured_piece = self[side_to_move][mov.destination_square()].unwrap();
-            self.delete_piece(mov.destination_square(), captured_piece, Color::BLACK, side_to_move);
+            self.delete_piece(
+                mov.destination_square(),
+                captured_piece,
+                Color::BLACK,
+                side_to_move,
+            );
 
             self.halfmove_clock = 0;
 
@@ -248,30 +281,60 @@ impl Board {
         }
 
         // We move the piece after the capture
-        self.move_piece(mov.origin_square(), mov.destination_square(), moved_piece, Color::WHITE, side_to_move);
+        self.move_piece(
+            mov.origin_square(),
+            mov.destination_square(),
+            moved_piece,
+            Color::WHITE,
+            side_to_move,
+        );
 
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            self.delete_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_to_move);
+            self.delete_piece(
+                en_passant_captured_square,
+                Piece::PAWN,
+                Color::BLACK,
+                side_to_move,
+            );
 
             self.halfmove_clock = 0;
         }
 
         // Castling, move the other rook
         // Castling rights are removed when the king moves
-        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(self.side_to_move) {
-            self.move_piece(rook_from_square, rook_dest_square, Piece::ROOK, Color::WHITE, side_to_move);
+        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(self.side_to_move)
+        {
+            self.move_piece(
+                rook_from_square,
+                rook_dest_square,
+                Piece::ROOK,
+                Color::WHITE,
+                side_to_move,
+            );
         }
 
         // Double pawn push, set the en passant target
         self[side_to_move].en_passant = mov.get_en_passant_target_square();
-        self[side_to_move.transpose()].en_passant = mov.get_en_passant_target_square().map(|square| square.transpose());
+        self[side_to_move.transpose()].en_passant = mov
+            .get_en_passant_target_square()
+            .map(|square| square.transpose());
         self.update_en_passant_zobrist_key(ext_mov);
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
-            self.delete_piece(mov.destination_square(), Piece::PAWN, Color::WHITE, side_to_move);
-            self.create_piece(mov.destination_square(), promotion_piece, Color::WHITE, side_to_move);
+            self.delete_piece(
+                mov.destination_square(),
+                Piece::PAWN,
+                Color::WHITE,
+                side_to_move,
+            );
+            self.create_piece(
+                mov.destination_square(),
+                promotion_piece,
+                Color::WHITE,
+                side_to_move,
+            );
 
             self.halfmove_clock = 0;
         }
@@ -301,34 +364,69 @@ impl Board {
         let mov = ext_mov.get_raw_move();
         let moved_piece = self[side_that_played][mov.destination_square()].unwrap();
 
-        self.move_piece(mov.destination_square(), mov.origin_square(), moved_piece, Color::WHITE, side_that_played);
+        self.move_piece(
+            mov.destination_square(),
+            mov.origin_square(),
+            moved_piece,
+            Color::WHITE,
+            side_that_played,
+        );
 
         // Capture
         if mov.is_capture() {
             let captured_piece = self.pop_captured();
-            self.create_piece(mov.destination_square(), captured_piece, Color::BLACK, side_that_played);
+            self.create_piece(
+                mov.destination_square(),
+                captured_piece,
+                Color::BLACK,
+                side_that_played,
+            );
         }
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            self.create_piece(en_passant_captured_square, Piece::PAWN, Color::BLACK, side_that_played);
+            self.create_piece(
+                en_passant_captured_square,
+                Piece::PAWN,
+                Color::BLACK,
+                side_that_played,
+            );
         }
 
         // Castling, move the other rook
-        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(side_that_played) {
-            self.move_piece(rook_dest_square, rook_from_square, Piece::ROOK, Color::WHITE, side_that_played);
+        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(side_that_played)
+        {
+            self.move_piece(
+                rook_dest_square,
+                rook_from_square,
+                Piece::ROOK,
+                Color::WHITE,
+                side_that_played,
+            );
         }
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
-            self.delete_piece(mov.origin_square(), promotion_piece, Color::WHITE, side_that_played);
-            self.create_piece(mov.origin_square(), Piece::PAWN, Color::WHITE, side_that_played);
+            self.delete_piece(
+                mov.origin_square(),
+                promotion_piece,
+                Color::WHITE,
+                side_that_played,
+            );
+            self.create_piece(
+                mov.origin_square(),
+                Piece::PAWN,
+                Color::WHITE,
+                side_that_played,
+            );
         }
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
         // En passant square is given from the side that played pov
         let side_to_move = self.side_to_move;
         self[side_that_played].en_passant = ext_mov.get_en_passant_target();
-        self[side_to_move].en_passant = self[side_that_played].en_passant.map(|square| square.transpose());
+        self[side_to_move].en_passant = self[side_that_played]
+            .en_passant
+            .map(|square| square.transpose());
         self.update_en_passant_zobrist_key(ext_mov);
 
         let old_caslting_rights = self.castling_rights;
@@ -337,7 +435,6 @@ impl Board {
 
         self.halfmove_clock = ext_mov.get_halfmove_clock();
         self.castling_rights = restored_castling_rights;
-
 
         self.side_to_move = self.side_to_move.transpose();
     }
@@ -354,33 +451,80 @@ impl Board {
 
     // Creates a piece of the given color on the given player's board (on black board, black has
     // white pieces)
-    fn create_piece(&mut self, square: Square, piece: Piece, piece_color: Color, player_color: Color) {
+    fn create_piece(
+        &mut self,
+        square: Square,
+        piece: Piece,
+        piece_color: Color,
+        player_color: Color,
+    ) {
         self.update_piece_move_zobrist_key(square, piece, piece_color, player_color);
 
         self[player_color].create_piece(square, piece, piece_color);
-        self[player_color.transpose()].create_piece(square.transpose(), piece, piece_color.transpose());
+        self[player_color.transpose()].create_piece(
+            square.transpose(),
+            piece,
+            piece_color.transpose(),
+        );
     }
 
-    fn delete_piece(&mut self, square: Square, piece: Piece, piece_color: Color, player_color: Color) {
+    fn delete_piece(
+        &mut self,
+        square: Square,
+        piece: Piece,
+        piece_color: Color,
+        player_color: Color,
+    ) {
         self.update_piece_move_zobrist_key(square, piece, piece_color, player_color);
 
         self[player_color].delete_piece(square, piece, piece_color);
-        self[player_color.transpose()].delete_piece(square.transpose(), piece, piece_color.transpose());
+        self[player_color.transpose()].delete_piece(
+            square.transpose(),
+            piece,
+            piece_color.transpose(),
+        );
     }
 
     // This moves a piece of the given side color
-    fn move_piece(&mut self, from: Square, to: Square, piece: Piece, piece_color: Color, player_color: Color) {
+    fn move_piece(
+        &mut self,
+        from: Square,
+        to: Square,
+        piece: Piece,
+        piece_color: Color,
+        player_color: Color,
+    ) {
         self.update_piece_move_zobrist_key(from, piece, piece_color, player_color);
         self.update_piece_move_zobrist_key(to, piece, piece_color, player_color);
 
         self[player_color].move_piece(from, to, piece, piece_color);
-        self[player_color.transpose()].move_piece(from.transpose(), to.transpose(), piece, piece_color.transpose());
+        self[player_color.transpose()].move_piece(
+            from.transpose(),
+            to.transpose(),
+            piece,
+            piece_color.transpose(),
+        );
     }
 
     // Creates a LegalMoveGenerator for the side to move
     pub fn create_legal_move_generator(&self) -> LegalMoveGenerator {
         let side_to_move = self.side_to_move;
-        LegalMoveGenerator::new(&self.halfboards[side_to_move], side_to_move, self.castling_rights, self.halfmove_clock)
+        LegalMoveGenerator::new(
+            &self.halfboards[side_to_move],
+            side_to_move,
+            self.castling_rights,
+            self.halfmove_clock,
+        )
+    }
+
+    pub fn create_opponent_legal_move_generator(&self) -> LegalMoveGenerator {
+        let side_to_move = self.side_to_move;
+        LegalMoveGenerator::new(
+            &self.halfboards[side_to_move.transpose()],
+            side_to_move.transpose(),
+            self.castling_rights,
+            self.halfmove_clock,
+        )
     }
 }
 
@@ -447,7 +591,6 @@ impl IndexMut<Square> for HalfBoard {
     }
 }
 
-
 // An whole Board and HalfBoard from a FEN string
 impl HalfBoard {
     // TODO clean parser
@@ -468,7 +611,7 @@ impl HalfBoard {
                 } else {
                     pos -= 1;
 
-                    let singly_populated_bitboard = BitBoard::new(1 << (8*i + pos));
+                    let singly_populated_bitboard = BitBoard::new(1 << (8 * i + pos));
                     // Piece bitboard
                     let new_piece = match c.to_ascii_lowercase() {
                         'p' => Piece::PAWN,
@@ -482,7 +625,11 @@ impl HalfBoard {
                     board[new_piece] |= singly_populated_bitboard;
 
                     // Occupancy
-                    let color = if c.is_ascii_lowercase() { Color::BLACK } else { Color::WHITE };
+                    let color = if c.is_ascii_lowercase() {
+                        Color::BLACK
+                    } else {
+                        Color::WHITE
+                    };
                     board[color] |= singly_populated_bitboard;
                 }
             }
@@ -593,12 +740,12 @@ impl Transpose for BitBoard {
         let v1 = 0x00FF00FF00FF00FF;
         let v2 = 0x0000FFFF0000FFFF;
 
-        x = ((x >>  1) & h1) | ((x & h1) <<  1);
-        x = ((x >>  2) & h2) | ((x & h2) <<  2);
-        x = ((x >>  4) & h4) | ((x & h4) <<  4);
-        x = ((x >>  8) & v1) | ((x & v1) <<  8);
+        x = ((x >> 1) & h1) | ((x & h1) << 1);
+        x = ((x >> 2) & h2) | ((x & h2) << 2);
+        x = ((x >> 4) & h4) | ((x & h4) << 4);
+        x = ((x >> 8) & v1) | ((x & v1) << 8);
         x = ((x >> 16) & v2) | ((x & v2) << 16);
-        x = ( x >> 32)       | ( x       << 32);
+        x = (x >> 32) | (x << 32);
 
         BitBoard(x)
     }
@@ -612,7 +759,7 @@ impl Iterator for BitBoard {
     fn next(&mut self) -> Option<Self::Item> {
         if self.0 != 0 {
             Some(self.pop_lsb_as_square())
-        } else  {
+        } else {
             None
         }
     }
@@ -680,7 +827,6 @@ impl PartialEq<u64> for BitBoard {
 
 impl FusedIterator for BitBoard {}
 
-
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         /*
@@ -690,8 +836,8 @@ impl fmt::Display for Board {
         for i in (0..8).rev() {
             let halfboard = &self[Color::WHITE];
             for j in (0..8).rev() {
-                if let Some(piece) = halfboard.board_88[8*i + j] {
-                    if halfboard[Color::WHITE].has_square(Square::new((8*i+j) as u8)) {
+                if let Some(piece) = halfboard.board_88[8 * i + j] {
+                    if halfboard[Color::WHITE].has_square(Square::new((8 * i + j) as u8)) {
                         write!(f, "{}", piece.to_char().to_uppercase().next().unwrap())?;
                     } else {
                         write!(f, "{}", piece.to_char())?;
@@ -703,8 +849,8 @@ impl fmt::Display for Board {
             write!(f, "   ")?;
             let halfboard = &self[Color::BLACK];
             for j in (0..8).rev() {
-                if let Some(piece) = halfboard.board_88[8*i + j] {
-                    if halfboard[Color::WHITE].has_square(Square::new((8*i+j) as u8)) {
+                if let Some(piece) = halfboard.board_88[8 * i + j] {
+                    if halfboard[Color::WHITE].has_square(Square::new((8 * i + j) as u8)) {
                         write!(f, "{}", piece.to_char().to_uppercase().next().unwrap())?;
                     } else {
                         write!(f, "{}", piece.to_char())?;
@@ -716,22 +862,22 @@ impl fmt::Display for Board {
             // Metadata info
             if i == 6 {
                 write!(f, "   castling rights: ")?;
-                if self.castling_rights & 0b1000  != 0 {
+                if self.castling_rights & 0b1000 != 0 {
                     write!(f, "q")?;
                 } else {
                     write!(f, ".")?;
                 }
-                if self.castling_rights & 0b0100  != 0 {
+                if self.castling_rights & 0b0100 != 0 {
                     write!(f, "k")?;
                 } else {
                     write!(f, ".")?;
                 }
-                if self.castling_rights & 0b0010  != 0 {
+                if self.castling_rights & 0b0010 != 0 {
                     write!(f, "Q")?;
                 } else {
                     write!(f, ".")?;
                 }
-                if self.castling_rights & 0b0001  != 0 {
+                if self.castling_rights & 0b0001 != 0 {
                     write!(f, "K")?;
                 } else {
                     write!(f, ".")?;
@@ -751,10 +897,14 @@ impl fmt::Display for Board {
 
             writeln!(f)?;
         }
-        writeln!(f, "{}", match self.side_to_move {
-            Color::WHITE => "   /\\",
-            Color::BLACK => "               /\\",
-        })?;
+        writeln!(
+            f,
+            "{}",
+            match self.side_to_move {
+                Color::WHITE => "   /\\",
+                Color::BLACK => "               /\\",
+            }
+        )?;
         writeln!(f)
     }
 }
@@ -763,8 +913,8 @@ impl fmt::Display for HalfBoard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for i in (0..8).rev() {
             for j in (0..8).rev() {
-                if let Some(piece) = self.board_88[8*i + j] {
-                    if self[Color::WHITE].has_square(Square::new((8*i+j) as u8)) {
+                if let Some(piece) = self.board_88[8 * i + j] {
+                    if self[Color::WHITE].has_square(Square::new((8 * i + j) as u8)) {
                         write!(f, "{}", piece.to_char().to_uppercase().next().unwrap())?;
                     } else {
                         write!(f, "{}", piece.to_char())?;
@@ -805,7 +955,7 @@ impl fmt::Debug for HalfBoard {
 impl fmt::Debug for BitBoard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for i in (0..8).rev() {
-            let line: u8 = ((self.0 >> (8*i)) & 0xff) as u8;
+            let line: u8 = ((self.0 >> (8 * i)) & 0xff) as u8;
             for j in (0..8).rev() {
                 write!(f, "{}", (line >> j) & 0x1)?;
             }
