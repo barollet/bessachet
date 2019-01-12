@@ -1,6 +1,4 @@
 use std::fmt;
-use std::iter::FusedIterator;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Mul, Not, Shl, Shr};
 use std::ops::{Index, IndexMut};
 
 use utils::*;
@@ -683,150 +681,6 @@ impl Board {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct BitBoard(pub u64);
-
-impl BitBoard {
-    pub const fn new(bitboard: u64) -> Self {
-        BitBoard(bitboard)
-    }
-
-    pub const fn empty() -> Self {
-        BitBoard(0)
-    }
-
-    pub const fn full() -> Self {
-        BitBoard(u64::max_value())
-    }
-
-    // Has to be called on a non empty Bitboard
-    pub fn as_square(self) -> Square {
-        Square(self.0.trailing_zeros() as u8)
-    }
-
-    // Returns the bitboard containing only the LSB and removes it
-    pub fn pop_lsb_as_square(&mut self) -> Square {
-        let singly_populated_bitboard = self.0 & self.0.overflowing_neg().0;
-        self.0 ^= singly_populated_bitboard;
-        BitBoard(singly_populated_bitboard).as_square()
-    }
-
-    pub fn has_square(self, square: Square) -> bool {
-        self & square.as_bitboard() != 0
-    }
-    pub fn has_squares(self, squares: BitBoard) -> bool {
-        self & squares != 0
-    }
-
-    pub fn remove_square(self, square: Square) -> Self {
-        self.remove_squares(square.as_bitboard())
-    }
-    pub fn remove_squares(self, squares: Self) -> Self {
-        self & !squares
-    }
-    pub fn add_square(self, square: Square) -> Self {
-        self | square.as_bitboard()
-    }
-}
-
-impl Transpose for BitBoard {
-    #[clippy::allow(clippy::unreadable_literal)]
-    fn transpose(&self) -> Self {
-        let mut x = self.0;
-
-        let h1 = 0x5555555555555555;
-        let h2 = 0x3333333333333333;
-        let h4 = 0x0F0F0F0F0F0F0F0F;
-        let v1 = 0x00FF00FF00FF00FF;
-        let v2 = 0x0000FFFF0000FFFF;
-
-        x = ((x >> 1) & h1) | ((x & h1) << 1);
-        x = ((x >> 2) & h2) | ((x & h2) << 2);
-        x = ((x >> 4) & h4) | ((x & h4) << 4);
-        x = ((x >> 8) & v1) | ((x & v1) << 8);
-        x = ((x >> 16) & v2) | ((x & v2) << 16);
-        x = (x >> 32) | (x << 32);
-
-        BitBoard(x)
-    }
-}
-
-// Iterates over the bits of the given bitboard and returns the associated Square
-// starting from the MSB
-impl Iterator for BitBoard {
-    type Item = Square;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.0 != 0 {
-            Some(self.pop_lsb_as_square())
-        } else {
-            None
-        }
-    }
-}
-
-impl BitAnd for BitBoard {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self {
-        BitBoard::new(self.0 & rhs.0)
-    }
-}
-
-impl BitAndAssign for BitBoard {
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.0 &= rhs.0;
-    }
-}
-
-impl BitOr for BitBoard {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        BitBoard::new(self.0 | rhs.0)
-    }
-}
-
-impl BitOrAssign for BitBoard {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 |= rhs.0;
-    }
-}
-
-impl Not for BitBoard {
-    type Output = Self;
-    fn not(self) -> Self {
-        BitBoard::new(!self.0)
-    }
-}
-
-impl Shl<u32> for BitBoard {
-    type Output = Self;
-    fn shl(self, rhs: u32) -> Self {
-        BitBoard::new(self.0 << rhs)
-    }
-}
-
-impl Shr<u32> for BitBoard {
-    type Output = Self;
-    fn shr(self, rhs: u32) -> Self {
-        BitBoard::new(self.0 >> rhs)
-    }
-}
-
-impl Mul<u64> for BitBoard {
-    type Output = Self;
-    fn mul(self, rhs: u64) -> Self {
-        BitBoard::new(self.0 * rhs)
-    }
-}
-
-impl PartialEq<u64> for BitBoard {
-    fn eq(&self, other: &u64) -> bool {
-        self.0 == *other
-    }
-}
-
-impl FusedIterator for BitBoard {}
-
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         /*
@@ -949,18 +803,5 @@ impl fmt::Debug for HalfBoard {
         write!(f, "{:?}", self[Piece::KING])?;
         write!(f, "{:?}", self[Color::WHITE])?;
         write!(f, "{:?}", self[Color::BLACK])
-    }
-}
-
-impl fmt::Debug for BitBoard {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for i in (0..8).rev() {
-            let line: u8 = ((self.0 >> (8 * i)) & 0xff) as u8;
-            for j in (0..8).rev() {
-                write!(f, "{}", (line >> j) & 0x1)?;
-            }
-            writeln!(f)?;
-        }
-        writeln!(f)
     }
 }
