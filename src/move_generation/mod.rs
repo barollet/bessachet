@@ -228,6 +228,8 @@ impl LegalMoveGenerator {
                 }
             }
         }
+
+        self.order_moves();
     }
 }
 
@@ -447,10 +449,14 @@ impl LegalMoveGenerator {
     fn compute_checkers(&mut self, board: &HalfBoard) {
         let white_king_square = board.white_king_square();
         let black_pawns = board[Color::BLACK] & board[Piece::PAWN];
-        if black_pawns.has_square(white_king_square.forward_left()) {
+        if !FILE_A.has_square(white_king_square)
+            && black_pawns.has_square(white_king_square.forward_left())
+        {
             self.push_checker(white_king_square.forward_left());
         }
-        if black_pawns.has_square(white_king_square.forward_right()) {
+        if !FILE_H.has_square(white_king_square)
+            && black_pawns.has_square(white_king_square.forward_right())
+        {
             self.push_checker(white_king_square.forward_right());
         }
         for knight_square in board[Color::BLACK] & board[Piece::KNIGHT] {
@@ -562,28 +568,30 @@ impl LegalMoveGenerator {
         // Knight
         can_capture |= knight_attack(captured_square) & board[Color::WHITE] & board[Piece::KNIGHT];
         // Pawn simple capture or promotion
-        let mut pawn_simple_captures = BitBoard::empty();
-        if !FILE_A.has_square(captured_square) {
-            pawn_simple_captures |= captured_square.behind_left().as_bitboard()
-                & board[Color::WHITE]
-                & board[Piece::PAWN]
-        }
-        if !FILE_H.has_square(captured_square) {
-            pawn_simple_captures |= captured_square.behind_right().as_bitboard()
-                & board[Color::WHITE]
-                & board[Piece::PAWN]
-        }
-        if !ROW_8.has_square(captured_square) {
-            can_capture |= pawn_simple_captures;
-        } else {
-            // Promotion
-            let pawn_promotions = pawn_simple_captures.remove_squares(!self.free_pieces);
-            for capturing_square in pawn_promotions {
-                self.push_promotions_from_move(Move::tactical_move(
-                    capturing_square,
-                    captured_square,
-                    CAPTURE_FLAG | PROMOTION_FLAG,
-                ));
+        if !(ROW_1 | ROW_2).has_square(captured_square) {
+            let mut pawn_simple_captures = BitBoard::empty();
+            if !FILE_A.has_square(captured_square) {
+                pawn_simple_captures |= captured_square.behind_left().as_bitboard()
+                    & board[Color::WHITE]
+                    & board[Piece::PAWN]
+            }
+            if !FILE_H.has_square(captured_square) {
+                pawn_simple_captures |= captured_square.behind_right().as_bitboard()
+                    & board[Color::WHITE]
+                    & board[Piece::PAWN]
+            }
+            if !ROW_8.has_square(captured_square) {
+                can_capture |= pawn_simple_captures;
+            } else {
+                // Promotion
+                let pawn_promotions = pawn_simple_captures.remove_squares(!self.free_pieces);
+                for capturing_square in pawn_promotions {
+                    self.push_promotions_from_move(Move::tactical_move(
+                        capturing_square,
+                        captured_square,
+                        CAPTURE_FLAG | PROMOTION_FLAG,
+                    ));
+                }
             }
         }
 
@@ -817,6 +825,28 @@ impl LegalMoveGenerator {
         // -----------------------------------------
     }
 
+    // Performs move ordering
+    // Here the captures are set first
+    fn order_moves(&mut self) {
+        let mut last_capture_index = 0;
+
+        for move_index in 0..self.number_of_legal_moves {
+            if self.move_stack[move_index].has_flags(CAPTURE_FLAG) {
+                if move_index != last_capture_index {
+                    // push the move to the end of the capture moves
+                    let capture_move = self.move_stack[move_index];
+                    self.move_stack[move_index] = self.move_stack[last_capture_index];
+                    self.move_stack[last_capture_index] = capture_move;
+                }
+                last_capture_index += 1;
+            }
+        }
+    }
+
+    pub fn is_king_checked(&self) -> bool {
+        self.number_of_checkers != 0
+    }
+
     // Returns an attack map of the given position with White playing
     pub fn attack_map(&self, board: &HalfBoard) -> BitBoard {
         let mut attack_map = BitBoard::empty();
@@ -850,6 +880,10 @@ impl LegalMoveGenerator {
     pub fn number_of_legal_moves(&self) -> usize {
         self.number_of_legal_moves
     }
+
+    pub fn capture_iterator(&mut self) -> CaptureIterator {
+        CaptureIterator::new(self)
+    }
 }
 
 // The iterator function is straightforward and assumes that the moves have been sorted before
@@ -869,17 +903,45 @@ impl Iterator for LegalMoveGenerator {
     }
 }
 
+// An helper structure to iterate over only the capture moves
+pub struct CaptureIterator<'a> {
+    move_generator: &'a mut LegalMoveGenerator,
+}
+
+impl<'a> CaptureIterator<'a> {
+    fn new(move_generator: &mut LegalMoveGenerator) -> CaptureIterator {
+        CaptureIterator { move_generator }
+    }
+}
+
+impl<'a> Iterator for CaptureIterator<'a> {
+    type Item = ExtendedMove;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.move_generator.next() {
+            Some(next_move) => {
+                if next_move.get_raw_move().has_flags(CAPTURE_FLAG) {
+                    Some(next_move)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+}
+
 /* Debugging interface */
 impl Board {
     #[allow(dead_code)]
     // TODO redo interface to for example e2e3 instead of e 2 e 3
-    pub fn play_move(
-        &mut self,
-        origin_file: char,
-        origin_row: char,
-        dest_file: char,
-        dest_row: char,
-    ) {
+    pub fn play_move(&mut self, mov: &str) {
+        let chars: Vec<_> = mov.chars().collect();
+        assert_eq!(chars.len(), 4);
+        let origin_file = chars[0];
+        let origin_row = chars[1];
+        let dest_file = chars[2];
+        let dest_row = chars[3];
         let mut origin_square = Square::from_char_file_rank(origin_file, origin_row);
         let mut dest_square = Square::from_char_file_rank(dest_file, dest_row);
         if self.side_to_move == Color::BLACK {

@@ -514,16 +514,6 @@ impl Board {
             self.halfmove_clock,
         )
     }
-
-    pub fn create_opponent_legal_move_generator(&self) -> LegalMoveGenerator {
-        let side_to_move = self.side_to_move;
-        LegalMoveGenerator::new(
-            &self.halfboards[side_to_move.transpose()],
-            side_to_move.transpose(),
-            self.castling_rights,
-            self.halfmove_clock,
-        )
-    }
 }
 
 // A Board indexed by Color returns the corresponding pov of the position

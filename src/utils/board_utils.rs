@@ -86,6 +86,7 @@ pub const fn file(number: u32) -> u64 {
 }
 
 // Some constants declaration
+pub const ROW_1: BitBoard = BitBoard::new(0xff);
 pub const ROW_2: BitBoard = BitBoard::new(0xff00);
 pub const ROW_7: BitBoard = BitBoard::new(0x00ff000000000000);
 pub const ROW_8: BitBoard = BitBoard::new(0xff00000000000000);

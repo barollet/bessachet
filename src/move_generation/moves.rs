@@ -33,13 +33,16 @@ const QUEEN_CASTLE_FLAG: u16 = SPECIAL0_FLAG | SPECIAL1_FLAG;
 // [black castle, white castle]
 pub const KING_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
     Move::raw_new(D1_SQUARE, B1_SQUARE).set_flags(KING_CASTLE_FLAG),
-    Move::raw_new(E1_SQUARE, G1_SQUARE).set_flags(KING_CASTLE_FLAG));
+    Move::raw_new(E1_SQUARE, G1_SQUARE).set_flags(KING_CASTLE_FLAG),
+);
 
 pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
     Move::raw_new(D1_SQUARE, F1_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
-    Move::raw_new(E1_SQUARE, C1_SQUARE).set_flags(QUEEN_CASTLE_FLAG));
+    Move::raw_new(E1_SQUARE, C1_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
+);
 
 pub const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
+pub const NULL_EXTMOVE: ExtendedMove = ExtendedMove(0);
 
 pub const CASTLING_RIGHTS_BITS_OFFSET: u8 = 16;
 pub const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 20;
@@ -121,9 +124,15 @@ impl Move {
     // If this is a castling move, returns the from and to squares of the associated tower
     pub fn get_castling_rook(self, side_to_move: Color) -> Option<(Square, Square)> {
         if self.has_exact_flags(KING_CASTLE_FLAG) {
-            Some((KING_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move], KING_CASTLE_ROOK_DEST_SQUARES[side_to_move]))
+            Some((
+                KING_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move],
+                KING_CASTLE_ROOK_DEST_SQUARES[side_to_move],
+            ))
         } else if self.has_exact_flags(QUEEN_CASTLE_FLAG) {
-            Some((QUEEN_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move], QUEEN_CASTLE_ROOK_DEST_SQUARES[side_to_move]))
+            Some((
+                QUEEN_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move],
+                QUEEN_CASTLE_ROOK_DEST_SQUARES[side_to_move],
+            ))
         } else {
             None
         }
@@ -166,13 +175,16 @@ impl ExtendedMove {
     }
 
     pub fn get_castling_rights(self) -> u8 {
-        ((self.0 >> CASTLING_RIGHTS_BITS_OFFSET) & (u64::max_value() >> (64-CASTLING_RIGHTS_BITS_SIZE))) as u8
+        ((self.0 >> CASTLING_RIGHTS_BITS_OFFSET)
+            & (u64::max_value() >> (64 - CASTLING_RIGHTS_BITS_SIZE))) as u8
     }
     pub fn get_halfmove_clock(self) -> u8 {
-        ((self.0 >> HALFMOVE_CLOCK_BITS_OFFSET) & (u64::max_value() >> (64-HALFMOVE_CLOCK_BITS_SIZE))) as u8
+        ((self.0 >> HALFMOVE_CLOCK_BITS_OFFSET)
+            & (u64::max_value() >> (64 - HALFMOVE_CLOCK_BITS_SIZE))) as u8
     }
     pub fn get_en_passant_target(self) -> Option<Square> {
-        let square = ((self.0 >> EN_PASSANT_SQUARE_BITS_OFFSET) & (u64::max_value() >> (64-EN_PASSANT_SQUARE_BITS_SIZE))) as u8;
+        let square = ((self.0 >> EN_PASSANT_SQUARE_BITS_OFFSET)
+            & (u64::max_value() >> (64 - EN_PASSANT_SQUARE_BITS_SIZE))) as u8;
         if square != 0 {
             Some(Square::new(square))
         } else {

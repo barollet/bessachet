@@ -13,33 +13,17 @@ use board::Board;
 use utils::*;
 
 fn main() {
-    println!("board size {}", std::mem::size_of::<Board>());
-    println!("board size {}", std::mem::size_of::<Piece>());
-    println!("board size {}", std::mem::size_of::<Option<Piece>>());
-    println!("board size {}", std::mem::size_of::<[Option<Piece>; 64]>());
+    let mut board =
+        Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
+            .unwrap();
 
-    let mut board = Board::initial_position();
-    println!("zobrist {}", board.zobrist_key);
-    let generator = board.create_legal_move_generator();
-    println!("eval {}", board.evaluation(&generator));
-    println!("{}", board.evaluation(&generator));
+    let mut other_board = board.clone();
+    other_board.play_move("g2h3");
+    other_board.play_move("b4c3");
+    println!("eval other {}", other_board.evaluation());
 
-    for mov in generator {
-        board.make(mov);
-        board.unmake(mov);
-    }
-
-    println!("zobrist {}", board.zobrist_key);
-
-    let bitboard = board[Color::WHITE][Piece::KING] & board[Color::WHITE][Color::WHITE];
-    println!("{:?}", bitboard);
-    println!("{:?}", bitboard.transpose());
-
-    board.play_move('e', '2', 'e', '3');
-
-    let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
-        .unwrap();
-    let generator = board.create_legal_move_generator();
-    println!("eval {}", board.evaluation(&generator));
+    println!("eval {}", board.evaluation());
     println!("{}", board);
+    let (best_mov, score) = board.best_move(3);
+    println!("best move and score: {} {}", best_mov.get_raw_move(), score);
 }

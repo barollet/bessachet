@@ -32,9 +32,9 @@ impl HalfBoard {
     }
 
     fn doubled_pawns(&self, color: Color) -> f32 {
-        -0.5 * FILES.iter().fold(0, |acc, file| {
-            acc + (self[Piece::PAWN] & self[color] & *file).population() - 1
-        }) as f32
+        -0.5 * FILES.iter().fold(0.0, |acc, file| {
+            acc + (self[Piece::PAWN] & self[color] & *file).population() as f32 - 1.0
+        })
     }
 
     fn isolated_pawns(&self, color: Color) -> f32 {
@@ -59,21 +59,25 @@ impl HalfBoard {
     }
 }
 
+impl LegalMoveGenerator {
+    pub fn mobility_evaluation(color: Color) -> f32 {
+        0.0
+    }
+}
+
 impl Board {
     // Evaluates the position of the given board
     // TODO better evaluation
-    pub fn evaluation(&self, move_generator: &LegalMoveGenerator) -> f32 {
+    pub fn evaluation(&self) -> f32 {
         let move_pov = &self[self.side_to_move];
         move_pov.material_evaluation()
             + move_pov.pawn_structure_evaluation()
-            + self.mobility_evaluation(move_generator)
+            + self.mobility_evaluation()
     }
 
     // TODO change mobility evaluation to other criteria
-    fn mobility_evaluation(&self, move_generator: &LegalMoveGenerator) -> f32 {
-        0.1 * (move_generator.number_of_legal_moves() as f32
-            - self
-                .create_opponent_legal_move_generator()
-                .number_of_legal_moves() as f32)
+    fn mobility_evaluation(&self) -> f32 {
+        LegalMoveGenerator::mobility_evaluation(self.side_to_move)
+            - LegalMoveGenerator::mobility_evaluation(self.side_to_move.transpose())
     }
 }
