@@ -4,6 +4,8 @@ extern crate enum_primitive;
 extern crate lazy_static;
 
 mod board;
+mod evaluation;
+mod hash_tables;
 mod move_generation;
 mod search;
 mod utils;

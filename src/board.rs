@@ -5,6 +5,8 @@ use utils::*;
 
 use move_generation::*;
 
+use evaluation::MaterialEvaluator;
+
 // The board is represented as a set of bitboards
 // See: https://www.chessprogramming.org/Bitboards
 
@@ -30,10 +32,12 @@ pub struct Board {
 
     pub side_to_move: Color,
 
-    capture_stack: [Piece; 32], // Pawns captured en passant are not but here (there is the code in the move encoding for en passant)
+    capture_stack: [Piece; 32], // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
     capture_stack_index: usize,
 
     pub zobrist_key: u64,
+
+    pub material_evaluator: MaterialEvaluator,
 }
 
 // The board keeps two redundant representation so the move generation is white to move only
@@ -202,6 +206,7 @@ impl Transpose for Board {
 impl Board {
     // Returns a board representing a given position
     // Two halfboards and initial parameters
+    // NOTE: The position should be given from White pov
     pub fn init_from_position(
         position: &HalfBoard,
         castling_rights: u8,
@@ -211,7 +216,7 @@ impl Board {
         let white_pov = position.clone();
         let black_pov = position.clone().transpose();
         let mut board = Board {
-            halfboards: BlackWhiteAttribute::new(black_pov, white_pov),
+            halfboards: BlackWhiteAttribute::new(black_pov, white_pov), // TODO remove second clone
 
             halfmove_clock,
             castling_rights,
@@ -222,6 +227,8 @@ impl Board {
             capture_stack_index: 0,
 
             zobrist_key: 0,
+
+            material_evaluator: MaterialEvaluator::new(position),
         };
         board.compute_zobrist_key();
 
@@ -276,6 +283,9 @@ impl Board {
             }
 
             self.push_captured(captured_piece);
+
+            self.material_evaluator
+                .capture_piece(captured_piece, side_to_move.transpose());
         }
 
         // We move the piece after the capture
@@ -297,6 +307,9 @@ impl Board {
             );
 
             self.halfmove_clock = 0;
+
+            self.material_evaluator
+                .capture_piece(Piece::PAWN, side_to_move.transpose());
         }
 
         // Castling, move the other rook
@@ -335,6 +348,9 @@ impl Board {
             );
 
             self.halfmove_clock = 0;
+
+            self.material_evaluator
+                .promote_piece(promotion_piece, side_to_move);
         }
         // Castling rights update
         if moved_piece == Piece::KING {
@@ -379,6 +395,9 @@ impl Board {
                 Color::BLACK,
                 side_that_played,
             );
+
+            self.material_evaluator
+                .uncapture_piece(captured_piece, self.side_to_move);
         }
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
@@ -388,6 +407,8 @@ impl Board {
                 Color::BLACK,
                 side_that_played,
             );
+            self.material_evaluator
+                .uncapture_piece(Piece::PAWN, self.side_to_move);
         }
 
         // Castling, move the other rook
@@ -416,6 +437,9 @@ impl Board {
                 Color::WHITE,
                 side_that_played,
             );
+
+            self.material_evaluator
+                .unpromote_piece(promotion_piece, side_that_played);
         }
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
@@ -644,13 +668,13 @@ impl Board {
             return Err("Invalid FEN string");
         }
 
-        board[Color::WHITE] = HalfBoard::from_fen(&fen_parts)?;
-        board[Color::BLACK] = board[Color::WHITE].transpose();
+        let position = HalfBoard::from_fen(&fen_parts)?;
 
         // castling
+        let mut castling_rights = 0;
         if fen_parts[2] != "-" {
             for c in fen_parts[2].chars() {
-                board.castling_rights |= match c {
+                castling_rights |= match c {
                     'K' => 0x1,
                     'Q' => 0x2,
                     'k' => 0x4,
@@ -661,13 +685,18 @@ impl Board {
         }
 
         // TODO side to move and halfmove_clock
-        match fen_parts[1].chars().next() {
-            Some('w') => board.side_to_move = Color::WHITE,
-            Some('b') => board.side_to_move = Color::BLACK,
+        let side_to_move = match fen_parts[1].chars().next() {
+            Some('w') => Color::WHITE,
+            Some('b') => Color::BLACK,
             _ => return Err("Invalid FEN string"),
-        }
+        };
 
-        Ok(board)
+        Ok(Board::init_from_position(
+            &position,
+            castling_rights,
+            0,
+            side_to_move,
+        ))
     }
 }
 

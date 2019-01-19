@@ -1,5 +1,3 @@
-mod evaluation;
-
 use board::Board;
 use move_generation::{ExtendedMove, NULL_EXTMOVE};
 use std::f32;
