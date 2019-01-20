@@ -35,7 +35,7 @@ pub struct Board {
     capture_stack: [Piece; 32], // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
     capture_stack_index: usize,
 
-    pub zobrist_key: u64,
+    zobrist_hasher: ZobristHasher,
 
     pub material_evaluator: MaterialEvaluator,
 }
@@ -215,7 +215,7 @@ impl Board {
     ) -> Self {
         let white_pov = position.clone();
         let black_pov = position.clone().transpose();
-        let mut board = Board {
+        Board {
             halfboards: BlackWhiteAttribute::new(black_pov, white_pov), // TODO remove second clone
 
             halfmove_clock,
@@ -226,13 +226,10 @@ impl Board {
             capture_stack: [Piece::PAWN; 32], // Initialized with pawns by default even if it should be empty
             capture_stack_index: 0,
 
-            zobrist_key: 0,
+            zobrist_hasher: ZobristHasher::new(position, side_to_move, castling_rights),
 
             material_evaluator: MaterialEvaluator::new(position),
-        };
-        board.compute_zobrist_key();
-
-        board
+        }
     }
 
     pub fn initial_position() -> Self {
@@ -330,7 +327,7 @@ impl Board {
         self[side_to_move.transpose()].en_passant = mov
             .get_en_passant_target_square()
             .map(|square| square.transpose());
-        self.update_en_passant_zobrist_key(ext_mov);
+        self.zobrist_hasher.update_en_passant_zobrist_key(ext_mov);
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
@@ -363,10 +360,11 @@ impl Board {
             }
         }
         let new_castling_rights = self.castling_rights;
-        self.update_castling_rights_zobrist_key(ext_mov.get_castling_rights(), new_castling_rights);
+        self.zobrist_hasher
+            .update_castling_rights_zobrist_key(ext_mov.get_castling_rights(), new_castling_rights);
 
         // Update the side to move
-        self.update_side_to_move_zobrist_key();
+        self.zobrist_hasher.update_side_to_move_zobrist_key();
         self.side_to_move = self.side_to_move.transpose();
     }
 
@@ -449,11 +447,12 @@ impl Board {
         self[side_to_move].en_passant = self[side_that_played]
             .en_passant
             .map(|square| square.transpose());
-        self.update_en_passant_zobrist_key(ext_mov);
+        self.zobrist_hasher.update_en_passant_zobrist_key(ext_mov);
 
         let old_caslting_rights = self.castling_rights;
         let restored_castling_rights = ext_mov.get_castling_rights();
-        self.update_castling_rights_zobrist_key(old_caslting_rights, restored_castling_rights);
+        self.zobrist_hasher
+            .update_castling_rights_zobrist_key(old_caslting_rights, restored_castling_rights);
 
         self.halfmove_clock = ext_mov.get_halfmove_clock();
         self.castling_rights = restored_castling_rights;
@@ -480,7 +479,8 @@ impl Board {
         piece_color: Color,
         player_color: Color,
     ) {
-        self.update_piece_move_zobrist_key(square, piece, piece_color, player_color);
+        self.zobrist_hasher
+            .update_piece_move_zobrist_key(square, piece, piece_color, player_color);
 
         self[player_color].create_piece(square, piece, piece_color);
         self[player_color.transpose()].create_piece(
@@ -497,7 +497,8 @@ impl Board {
         piece_color: Color,
         player_color: Color,
     ) {
-        self.update_piece_move_zobrist_key(square, piece, piece_color, player_color);
+        self.zobrist_hasher
+            .update_piece_move_zobrist_key(square, piece, piece_color, player_color);
 
         self[player_color].delete_piece(square, piece, piece_color);
         self[player_color.transpose()].delete_piece(
@@ -516,8 +517,10 @@ impl Board {
         piece_color: Color,
         player_color: Color,
     ) {
-        self.update_piece_move_zobrist_key(from, piece, piece_color, player_color);
-        self.update_piece_move_zobrist_key(to, piece, piece_color, player_color);
+        self.zobrist_hasher
+            .update_piece_move_zobrist_key(from, piece, piece_color, player_color);
+        self.zobrist_hasher
+            .update_piece_move_zobrist_key(to, piece, piece_color, player_color);
 
         self[player_color].move_piece(from, to, piece, piece_color);
         self[player_color.transpose()].move_piece(
@@ -661,8 +664,6 @@ impl HalfBoard {
 
 impl Board {
     pub fn from_fen(fen_string: &str) -> Result<Self, &'static str> {
-        let mut board = Self::empty_board();
-
         let fen_parts: Vec<_> = fen_string.split_whitespace().collect();
         if fen_parts.len() < 4 || fen_parts.len() > 6 {
             return Err("Invalid FEN string");

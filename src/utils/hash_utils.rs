@@ -1,8 +1,8 @@
 #![allow(clippy::unreadable_literal)]
 
-use utils::*;
-use board::Board;
+use board::HalfBoard;
 use move_generation::ExtendedMove;
+use utils::*;
 
 // A Xoroshiro Pseudo random generator
 // See: https://en.wikipedia.org/wiki/Xoroshiro128%2B
@@ -40,11 +40,11 @@ impl PRNG {
 
 // 12 possibles pieces per square, black to move, 16 different caslting rights and 8 possible file
 //    for en passant
-const ZOBRIST_ARRAY_SIZE: usize = 12*64 + 1 + 16 + 8;
+const ZOBRIST_ARRAY_SIZE: usize = 12 * 64 + 1 + 16 + 8;
 
-const ZOBRIST_SIDE_TO_MOVE: usize = 12*64;
-const ZOBRIST_CASTLING_BASE_OFFSET: usize = 12*64 + 1;
-const ZOBRIST_EN_PASSANT_BASE_OFFSET: usize = 12*64 + 1 + 16;
+const ZOBRIST_SIDE_TO_MOVE: usize = 12 * 64;
+const ZOBRIST_CASTLING_BASE_OFFSET: usize = 12 * 64 + 1;
+const ZOBRIST_EN_PASSANT_BASE_OFFSET: usize = 12 * 64 + 1 + 16;
 
 // Static initialisation for the Zobrist hashing
 lazy_static! {
@@ -66,64 +66,93 @@ fn zobrist_const_index(square: Square, piece: Piece, color: Color) -> usize {
     square.0 as usize * (6 * color as usize + piece as usize)
 }
 
-impl Board {
-    // Compute a zobrist key from scratch for the given board
-    pub fn compute_zobrist_key(&mut self) {
+#[derive(Copy, Clone)]
+pub struct ZobristHasher {
+    zobrist_key: u64,
+    zobrist_pawn_key: u64,
+}
+
+impl ZobristHasher {
+    // Initialize the zobrist keys for the given position (from White POV)
+    pub fn new(position: &HalfBoard, side_to_move: Color, castling_rights: u8) -> Self {
         // We reset the zobrist key
-        self.zobrist_key = 0;
+        let mut zobrist_key = 0;
         // For all squares we set the given piece
         // We use White POV
-        let board = &self.halfboards[Color::WHITE];
         for i in 0..64 {
             let square = Square::new(i);
             // If there is a piece on the given square
-            if let Some(piece) = board[square] {
+            if let Some(piece) = position[square] {
                 // We look at its color and we update the key
-                let color = if board[Color::WHITE].has_square(square) {
+                let color = if position[Color::WHITE].has_square(square) {
                     Color::WHITE
                 } else {
                     Color::BLACK
                 };
-                self.zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)];
+                zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)];
             }
         }
 
         // Side to move
-        if self.side_to_move == Color::BLACK {
-            self.zobrist_key ^= zobrist_consts[ZOBRIST_SIDE_TO_MOVE];
+        if side_to_move == Color::BLACK {
+            zobrist_key ^= zobrist_consts[ZOBRIST_SIDE_TO_MOVE];
         }
         // Castling rights
-        self.zobrist_key ^= zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + self.castling_rights as usize];
+        zobrist_key ^= zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + castling_rights as usize];
         // En passant file
-        if let Some(square) = board.en_passant {
-            self.zobrist_key ^= zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+        if let Some(square) = position.en_passant {
+            zobrist_key ^= zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+        }
+
+        ZobristHasher {
+            zobrist_key,
+            zobrist_pawn_key: 0,
         }
     }
 
     // Updating helpers
-    pub fn update_piece_move_zobrist_key(&mut self, square: Square, piece: Piece, color: Color, player_color: Color) {
+    pub fn update_piece_move_zobrist_key(
+        &mut self,
+        square: Square,
+        piece: Piece,
+        color: Color,
+        player_color: Color,
+    ) {
         // Depending on the player color POV we may have to transpose the square and color
         match player_color {
-            Color::WHITE => self.zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)],
-            Color::BLACK => self.zobrist_key ^= zobrist_consts[zobrist_const_index(square.transpose(), piece, color.transpose())],
+            Color::WHITE => {
+                self.zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)]
+            }
+            Color::BLACK => {
+                self.zobrist_key ^= zobrist_consts
+                    [zobrist_const_index(square.transpose(), piece, color.transpose())]
+            }
         }
     }
 
     pub fn update_en_passant_zobrist_key(&mut self, ext_mov: ExtendedMove) {
         // Reset the old en passant file
         if let Some(old_en_passant_square) = ext_mov.get_en_passant_target() {
-            self.zobrist_key ^= zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + old_en_passant_square.file() as usize];
+            self.zobrist_key ^= zobrist_consts
+                [ZOBRIST_EN_PASSANT_BASE_OFFSET + old_en_passant_square.file() as usize];
         }
         if let Some(square) = ext_mov.get_raw_move().get_en_passant_target_square() {
             // Set the new en passant file
-            self.zobrist_key ^= zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+            self.zobrist_key ^=
+                zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
         }
     }
 
-    pub fn update_castling_rights_zobrist_key(&mut self, old_caslting_rights: u8, new_castling_rights: u8) {
+    pub fn update_castling_rights_zobrist_key(
+        &mut self,
+        old_caslting_rights: u8,
+        new_castling_rights: u8,
+    ) {
         if old_caslting_rights != new_castling_rights {
-            self.zobrist_key ^= zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + old_caslting_rights as usize];
-            self.zobrist_key ^= zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + new_castling_rights as usize];
+            self.zobrist_key ^=
+                zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + old_caslting_rights as usize];
+            self.zobrist_key ^=
+                zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + new_castling_rights as usize];
         }
     }
 
