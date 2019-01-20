@@ -74,9 +74,11 @@ pub struct ZobristHasher {
 
 impl ZobristHasher {
     // Initialize the zobrist keys for the given position (from White POV)
+    // The zobrist pawn key is updated only by pawns position (maybe change this in the future)
     pub fn new(position: &HalfBoard, side_to_move: Color, castling_rights: u8) -> Self {
         // We reset the zobrist key
         let mut zobrist_key = 0;
+        let mut zobrist_pawn_key = 0;
         // For all squares we set the given piece
         // We use White POV
         for i in 0..64 {
@@ -90,6 +92,10 @@ impl ZobristHasher {
                     Color::BLACK
                 };
                 zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)];
+                if piece == Piece::PAWN {
+                    zobrist_pawn_key ^=
+                        zobrist_consts[zobrist_const_index(square, Piece::PAWN, color)];
+                }
             }
         }
 
@@ -106,12 +112,12 @@ impl ZobristHasher {
 
         ZobristHasher {
             zobrist_key,
-            zobrist_pawn_key: 0,
+            zobrist_pawn_key,
         }
     }
 
     // Updating helpers
-    pub fn update_piece_move_zobrist_key(
+    pub fn update_piece_capture_zobrist_key(
         &mut self,
         square: Square,
         piece: Piece,
@@ -126,6 +132,64 @@ impl ZobristHasher {
             Color::BLACK => {
                 self.zobrist_key ^= zobrist_consts
                     [zobrist_const_index(square.transpose(), piece, color.transpose())]
+            }
+        }
+    }
+
+    pub fn update_piece_move_zobrist_key(
+        &mut self,
+        from: Square,
+        to: Square,
+        piece: Piece,
+        color: Color,
+        player_color: Color,
+    ) {
+        // Depending on the player color POV we may have to transpose the square and color
+        match player_color {
+            Color::WHITE => {
+                self.zobrist_key ^= zobrist_consts[zobrist_const_index(from, piece, color)];
+                self.zobrist_key ^= zobrist_consts[zobrist_const_index(to, piece, color)]
+            }
+            Color::BLACK => {
+                self.zobrist_key ^=
+                    zobrist_consts[zobrist_const_index(from.transpose(), piece, color.transpose())];
+                self.zobrist_key ^=
+                    zobrist_consts[zobrist_const_index(to.transpose(), piece, color.transpose())]
+            }
+        }
+    }
+
+    pub fn update_pawn_capture_zobrist_key(&mut self, square: Square, color: Color, pov: Color) {
+        match pov {
+            Color::WHITE => {
+                self.zobrist_pawn_key ^=
+                    zobrist_consts[zobrist_const_index(square, Piece::PAWN, color)]
+            }
+            Color::BLACK => {
+                self.zobrist_pawn_key ^= zobrist_consts
+                    [zobrist_const_index(square.transpose(), Piece::PAWN, color.transpose())]
+            }
+        }
+    }
+
+    pub fn update_pawn_move_zobrist_key(
+        &mut self,
+        from: Square,
+        to: Square,
+        color: Color,
+        pov: Color,
+    ) {
+        match pov {
+            Color::WHITE => {
+                self.zobrist_pawn_key ^=
+                    zobrist_consts[zobrist_const_index(from, Piece::PAWN, color)];
+                self.zobrist_pawn_key ^= zobrist_consts[zobrist_const_index(to, Piece::PAWN, color)]
+            }
+            Color::BLACK => {
+                self.zobrist_pawn_key ^= zobrist_consts
+                    [zobrist_const_index(from.transpose(), Piece::PAWN, color.transpose())];
+                self.zobrist_pawn_key ^= zobrist_consts
+                    [zobrist_const_index(to.transpose(), Piece::PAWN, color.transpose())]
             }
         }
     }
