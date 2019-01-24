@@ -5,7 +5,7 @@ pub use self::material_evaluation::MaterialEvaluator;
 use board::{Board, HalfBoard};
 use move_generation::LegalMoveGenerator;
 
-use hash_tables::pawn_table;
+use hash_tables::*;
 
 use utils::*;
 
@@ -61,6 +61,13 @@ impl Board {
     // TODO better evaluation
     pub fn evaluation(&self) -> f32 {
         let move_pov = &self[self.side_to_move];
+        // Pawn table hit
+        let pawn_eval =
+            if let Some(pawn_entry) = PAWN_TABLE.probe(self.zobrist_hasher.zobrist_pawn_key) {
+                pawn_entry.evaluation as f32 * [-1.0, 1.0][self.side_to_move as usize]
+            } else {
+                move_pov.pawn_structure_evaluation()
+            };
         self.material_evaluator.evaluation(self.side_to_move) as f32
             + move_pov.pawn_structure_evaluation()
             + self.mobility_evaluation()

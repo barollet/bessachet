@@ -35,7 +35,7 @@ pub struct Board {
     capture_stack: [Piece; 32], // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
     capture_stack_index: usize,
 
-    zobrist_hasher: ZobristHasher,
+    pub zobrist_hasher: ZobristHasher,
 
     pub material_evaluator: MaterialEvaluator,
 }

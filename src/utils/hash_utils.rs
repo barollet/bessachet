@@ -7,7 +7,7 @@ use utils::*;
 // A Xoroshiro Pseudo random generator
 // See: https://en.wikipedia.org/wiki/Xoroshiro128%2B
 struct PRNG {
-    s: [u64; 2],
+    s: [usize; 2],
 }
 
 impl PRNG {
@@ -17,13 +17,13 @@ impl PRNG {
         }
     }
 
-    pub fn sseed(&mut self, s0: u64, s1: u64) {
+    pub fn sseed(&mut self, s0: usize, s1: usize) {
         self.s[0] = s0;
         self.s[1] = s1;
     }
 
     // Generates a pseudo random 64 bits word
-    pub fn next(&mut self) -> u64 {
+    pub fn next(&mut self) -> usize {
         let s0 = self.s[0];
         let mut s1 = self.s[1];
         let result = s0.overflowing_add(s1).0;
@@ -48,10 +48,10 @@ const ZOBRIST_EN_PASSANT_BASE_OFFSET: usize = 12 * 64 + 1 + 16;
 
 // Static initialisation for the Zobrist hashing
 lazy_static! {
-    static ref zobrist_consts: [u64; ZOBRIST_ARRAY_SIZE] = generate_zobrist_consts();
+    static ref zobrist_consts: [usize; ZOBRIST_ARRAY_SIZE] = generate_zobrist_consts();
 }
 
-fn generate_zobrist_consts() -> [u64; ZOBRIST_ARRAY_SIZE] {
+fn generate_zobrist_consts() -> [usize; ZOBRIST_ARRAY_SIZE] {
     let mut consts = [0; ZOBRIST_ARRAY_SIZE];
     let mut prng = PRNG::new();
     for value in consts.iter_mut() {
@@ -68,8 +68,8 @@ fn zobrist_const_index(square: Square, piece: Piece, color: Color) -> usize {
 
 #[derive(Copy, Clone)]
 pub struct ZobristHasher {
-    zobrist_key: u64,
-    zobrist_pawn_key: u64,
+    pub zobrist_key: usize,
+    pub zobrist_pawn_key: usize,
 }
 
 impl ZobristHasher {
