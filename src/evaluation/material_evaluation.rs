@@ -1,5 +1,4 @@
 use board::HalfBoard;
-use move_generation::moves::Move;
 use std::ops::{Index, IndexMut};
 use utils::*;
 
@@ -245,13 +244,13 @@ impl MaterialEvaluator {
         self.uncapture_piece(Piece::PAWN, color);
     }
 
-    pub fn evaluation(&self, side_to_move: Color) -> i8 {
-        let side_multiplier: i8 = [-1, 1][side_to_move as usize];
+    pub fn evaluation(&self, side_to_move: Color) -> f32 {
+        let side_multiplier = side_to_move.side_multiplier();
         if self.valid_index {
-            side_multiplier * MATERIAL_TABLE[self.table_index as usize]
+            side_multiplier * MATERIAL_TABLE[self.table_index as usize] as f32
         } else {
             // If the index is not a common constellation, we compute everything by hand
-            side_multiplier * material_value(&self.populations)
+            side_multiplier * material_value(&self.populations) as f32
         }
     }
 }

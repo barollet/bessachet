@@ -8,9 +8,11 @@ const INDEX_MASK: usize = 0xfff;
 
 pub type PawnTable = [PawnTableEntry; PAWN_TABLE_SIZE];
 
-lazy_static! {
-    pub static ref PAWN_TABLE: PawnTable = PawnTable::new();
-}
+pub static mut PAWN_TABLE: PawnTable = [PawnTableEntry {
+    key: 0,
+    evaluation: 0,
+    checksum: 0,
+}; PAWN_TABLE_SIZE];
 
 #[derive(Copy, Clone)]
 pub struct PawnTableEntry {
@@ -21,20 +23,11 @@ pub struct PawnTableEntry {
 }
 
 pub trait PawnTableInterface {
-    fn new() -> PawnTable;
     fn probe(&self, key: usize) -> Option<PawnTableEntry>;
     fn try_insert(&mut self, data: PawnTableEntry);
 }
 
 impl PawnTableInterface for PawnTable {
-    fn new() -> PawnTable {
-        [PawnTableEntry {
-            key: 0,
-            evaluation: 0,
-            checksum: 0,
-        }; PAWN_TABLE_SIZE]
-    }
-
     fn probe(&self, key: usize) -> Option<PawnTableEntry> {
         let table_entry = self[key & INDEX_MASK];
 
@@ -53,8 +46,23 @@ impl PawnTableInterface for PawnTable {
 }
 
 impl PawnTableEntry {
+    pub fn new(key: usize, eval: f32) -> Self {
+        let mut entry = PawnTableEntry {
+            key,
+            evaluation: eval as i8,
+            checksum: 0,
+        };
+
+        entry.checksum = entry.compute_checksum();
+
+        entry
+    }
     // Checks if the given entry is consistent with its checksum
     fn is_valid(&self) -> bool {
-        true
+        self.compute_checksum() ^ self.checksum == 0
+    }
+
+    fn compute_checksum(&self) -> usize {
+        self.key ^ (self.evaluation as usize)
     }
 }

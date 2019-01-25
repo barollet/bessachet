@@ -3,10 +3,7 @@ pub mod pawn_hash_table;
 use std::ops::{Index, IndexMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-//pub use self::pawn_hash_table::PAWN_TABLE;
-
-pub use self::pawn_hash_table::PawnTableInterface;
-pub use self::pawn_hash_table::PAWN_TABLE;
+pub use self::pawn_hash_table::*;
 
 lazy_static! {
     pub static ref transposition_table: u64 = 5;

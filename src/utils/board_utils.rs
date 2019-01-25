@@ -13,6 +13,12 @@ pub enum Color {
     WHITE,
 }
 
+impl Color {
+    pub fn side_multiplier(self) -> f32 {
+        [-1.0, 1.0][self as usize]
+    }
+}
+
 // We declare knights to queen first to use the value directly in promotion code in move encoding
 enum_from_primitive! {
 #[derive(Copy, Clone, PartialEq, Debug)]
