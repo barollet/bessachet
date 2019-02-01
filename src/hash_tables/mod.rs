@@ -1,14 +1,8 @@
-pub mod pawn_hash_table;
-
-use std::ops::{Index, IndexMut};
-use std::sync::atomic::{AtomicUsize, Ordering};
+mod pawn_hash_table;
+mod transposition_table;
 
 pub use self::pawn_hash_table::*;
-
-lazy_static! {
-    pub static ref transposition_table: u64 = 5;
-    pub static ref evaluation_table: u64 = 5;
-}
+pub use self::transposition_table::*;
 
 // TODO write generic code for hash tables
 

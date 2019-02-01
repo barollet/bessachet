@@ -1,5 +1,8 @@
 // Module holding move encoding
 
+use std::convert::{From, Into};
+use std::fmt;
+
 use utils::*;
 
 use enum_primitive::FromPrimitive;
@@ -17,14 +20,14 @@ pub struct Move(u16);
 #[derive(Clone, Copy)]
 pub struct ExtendedMove(u64);
 
-pub const SPECIAL0_FLAG: u16 = 1 << 12;
-pub const SPECIAL1_FLAG: u16 = 1 << 13;
+const SPECIAL0_FLAG: u16 = 1 << 12;
+const SPECIAL1_FLAG: u16 = 1 << 13;
 pub const CAPTURE_FLAG: u16 = 1 << 14;
 pub const PROMOTION_FLAG: u16 = 1 << 15;
 
 const FLAGS_RANGE: u16 = SPECIAL0_FLAG | SPECIAL1_FLAG | CAPTURE_FLAG | PROMOTION_FLAG;
 
-pub const DOUBLE_PUSH_FLAG: u16 = SPECIAL0_FLAG;
+const DOUBLE_PUSH_FLAG: u16 = SPECIAL0_FLAG;
 pub const EN_PASSANT_CAPTURE_FLAG: u16 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
 
 const KING_CASTLE_FLAG: u16 = SPECIAL1_FLAG;
@@ -44,13 +47,13 @@ pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::n
 pub const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
 pub const NULL_EXTMOVE: ExtendedMove = ExtendedMove(0);
 
-pub const CASTLING_RIGHTS_BITS_OFFSET: u8 = 16;
-pub const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 20;
-pub const EN_PASSANT_SQUARE_BITS_OFFSET: u8 = 28;
+const CASTLING_RIGHTS_BITS_OFFSET: u8 = 16;
+const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 20;
+const EN_PASSANT_SQUARE_BITS_OFFSET: u8 = 28;
 
-pub const CASTLING_RIGHTS_BITS_SIZE: u8 = 4;
-pub const HALFMOVE_CLOCK_BITS_SIZE: u8 = 7;
-pub const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
+const CASTLING_RIGHTS_BITS_SIZE: u8 = 4;
+const HALFMOVE_CLOCK_BITS_SIZE: u8 = 7;
+const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
 
 impl Move {
     // Creates a simple move with no side effect
@@ -208,5 +211,35 @@ impl Transpose for Move {
         transposed_move.0 |= u16::from(origin_square.0) + (u16::from(dest_square.0) << 6);
 
         transposed_move
+    }
+}
+
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{}",
+            self.origin_square(),
+            self.destination_square(),
+            match self.get_promotion_piece() {
+                Some(Piece::KNIGHT) => "n",
+                Some(Piece::BISHOP) => "b",
+                Some(Piece::ROOK) => "r",
+                Some(Piece::QUEEN) => "q",
+                _ => "",
+            }
+        )
+    }
+}
+
+impl Into<u16> for Move {
+    fn into(self) -> u16 {
+        self.0
+    }
+}
+
+impl From<u16> for Move {
+    fn from(raw_mov: u16) -> Move {
+        Move(raw_mov)
     }
 }

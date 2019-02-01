@@ -1,7 +1,6 @@
 pub mod init_magic;
 pub mod moves;
 
-use std::fmt;
 use std::ptr;
 
 use self::init_magic::{bishop_offset, fill_attack_table, rook_offset};
@@ -972,39 +971,6 @@ impl Board {
                 println!("{}", mov.get_raw_move());
             }
         }
-    }
-}
-
-impl fmt::Display for Move {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}{}",
-            self.origin_square(),
-            self.destination_square(),
-            match self.get_promotion_piece() {
-                Some(Piece::KNIGHT) => "n",
-                Some(Piece::BISHOP) => "b",
-                Some(Piece::ROOK) => "r",
-                Some(Piece::QUEEN) => "q",
-                _ => "",
-            }
-        )
-    }
-}
-
-impl fmt::Debug for Move {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{} p:{} c:{} sp1:{} sp0:{}",
-            self.origin_square(),
-            self.destination_square(),
-            self.has_flags(PROMOTION_FLAG),
-            self.has_flags(CAPTURE_FLAG),
-            self.has_flags(SPECIAL1_FLAG),
-            self.has_flags(SPECIAL0_FLAG)
-        )
     }
 }
 

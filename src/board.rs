@@ -32,11 +32,14 @@ pub struct Board {
 
     pub side_to_move: Color,
 
+    // Capture stack for making and unmaking
     capture_stack: [Piece; 32], // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
     capture_stack_index: usize,
 
+    // The pseudo-legal move generator takes into account pinned piece so legality checks can be
+    // performed for king moves and ep capture only
+    //move_generator: PseudoLegalMoveGenerator,
     pub zobrist_hasher: ZobristHasher,
-
     pub material_evaluator: MaterialEvaluator,
 }
 

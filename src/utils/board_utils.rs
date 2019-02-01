@@ -13,12 +13,6 @@ pub enum Color {
     WHITE,
 }
 
-impl Color {
-    pub fn side_multiplier(self) -> f32 {
-        [-1.0, 1.0][self as usize]
-    }
-}
-
 // We declare knights to queen first to use the value directly in promotion code in move encoding
 enum_from_primitive! {
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -34,6 +28,12 @@ pub enum Piece {
 }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct Square(pub u8);
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct BitBoard(pub u64);
+
 impl Piece {
     pub fn to_char(self) -> char {
         match self {
@@ -47,6 +47,12 @@ impl Piece {
     }
 }
 
+impl Color {
+    pub fn side_multiplier(self) -> f32 {
+        [-1.0, 1.0][self as usize]
+    }
+}
+
 pub const AVAILABLE_PROMOTION: [Piece; 4] =
     [Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN];
 pub const PIECES_LIST: [Piece; 6] = [
@@ -57,9 +63,6 @@ pub const PIECES_LIST: [Piece; 6] = [
     Piece::QUEEN,
     Piece::KING,
 ];
-
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub struct Square(pub u8);
 
 // This is an array of size 2 indexable by Color to obtain an attribute that is color dependant
 // such as castling squares or castling moves
@@ -327,9 +330,6 @@ impl fmt::Display for Square {
         )
     }
 }
-
-#[derive(Copy, Clone, PartialEq)]
-pub struct BitBoard(pub u64);
 
 impl BitBoard {
     pub const fn new(bitboard: u64) -> Self {
