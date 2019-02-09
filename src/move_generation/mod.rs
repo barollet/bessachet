@@ -30,13 +30,13 @@ mod magic_factors_tests;
 // See move_generation/init_magic.rs for impl block with initiatlization
 pub struct MagicEntry {
     magic: u64,
-    table: &'static u64, // static reference coerced to a pointer
-    black_mask: u64,
-    postmask: u64,
+    table: &'static BitBoard, // static reference coerced to a pointer
+    black_mask: BitBoard,
+    postmask: BitBoard,
 }
 
 const SLIDING_ATTACK_TABLE_SIZE: usize = 88507; // 651KB
-                                                //type SlidingAttackTable = Vec<BitBoard>;
+type SlidingAttackTable = Vec<BitBoard>;
 
 // NOTE: lazy statics uses an atomic check for each access, maybe at some point we will need to
 // remove this and come back to classical static mut or something else to make it faster
@@ -45,18 +45,20 @@ lazy_static! {
     pub static ref ROOK_ATTACK_TABLE: [MagicEntry; 64] = init_magic_entries(MagicEntry::rook_magic);
 
     // TODO better magic table with none naive arrangement and better magic factors to reduce size
-    pub static ref SLIDING_ATTACK_TABLE: [u64; SLIDING_ATTACK_TABLE_SIZE] = init_sliding_attack_tables();
+    pub static ref SLIDING_ATTACK_TABLE: SlidingAttackTable = init_sliding_attack_tables();
 
     static ref KNIGHT_ATTACK_TABLE: [BitBoard; 64] = generate_knight_attacks(); // 512 bytes
     static ref KING_ATTACK_TABLE: [BitBoard; 64] = generate_king_attacks(); // 512 bytes
 }
 
-fn init_sliding_attack_tables() -> [u64; SLIDING_ATTACK_TABLE_SIZE] {
-    let mut attack_table = [0; SLIDING_ATTACK_TABLE_SIZE];
+fn init_sliding_attack_tables() -> SlidingAttackTable {
+    let mut attack_table: SlidingAttackTable = Vec::with_capacity(SLIDING_ATTACK_TABLE_SIZE);
+    for _i in 0..SLIDING_ATTACK_TABLE_SIZE {
+        attack_table.push(BitBoard::empty());
+    }
     for square in 0u8..64 {
         fill_attack_table(&mut attack_table, square);
     }
-    println!("Magic table loaded");
     attack_table
 }
 
@@ -74,14 +76,14 @@ pub static EN_PASSANT_TABLE: [BitBoard; 8] = en_passant_table(); // 64 bytes 8*8
 fn sliding_attack(
     magic_entry: &MagicEntry,
     occupancy: BitBoard,
-    offset_function: fn(u64, u64) -> usize,
+    offset_function: fn(BitBoard, u64) -> usize,
 ) -> BitBoard {
-    let table_pointer: *const u64 = magic_entry.table;
+    let table_pointer: *const BitBoard = magic_entry.table;
 
-    let hash_key = occupancy.0 | magic_entry.black_mask;
+    let hash_key = occupancy | magic_entry.black_mask;
     let table_offset = offset_function(hash_key, magic_entry.magic);
 
-    BitBoard::new(unsafe { ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask })
+    unsafe { ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask }
 }
 
 pub fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
@@ -107,7 +109,7 @@ fn king_attack(square: Square) -> BitBoard {
 fn xray_attack(
     magic_entry: &MagicEntry,
     occupancy: BitBoard,
-    offset_function: fn(u64, u64) -> usize,
+    offset_function: fn(BitBoard, u64) -> usize,
 ) -> BitBoard {
     let attack = sliding_attack(magic_entry, occupancy, offset_function);
     let occupancy = occupancy & !attack;
@@ -864,6 +866,10 @@ impl LegalMoveGenerator {
 
     pub fn capture_iterator(&mut self) -> CaptureIterator {
         CaptureIterator::new(self)
+    }
+
+    pub fn number_of_legal_moves(&self) -> usize {
+        self.number_of_legal_moves
     }
 }
 
