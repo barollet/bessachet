@@ -9,7 +9,8 @@ pub type TranspositionTable = Vec<TTEntry>;
 
 lazy_static! {
     pub static ref TRANSPOSITION_TABLE: TranspositionTable = init_tt();
-    static ref INDEX_MASK: usize = usize::max_value() >> (64 - read_tt_size().trailing_zeros());
+    static ref INDEX_MASK: usize =
+        usize::max_value() >> (64 - (read_tt_size() / 16).trailing_zeros());
 }
 
 // Reads the TT size from the command line or use the default 64MB value
@@ -28,6 +29,8 @@ fn init_tt() -> TranspositionTable {
         tt.push(TTEntry::empty());
     }
 
+    println!("Transposition table initialized");
+
     tt
 }
 
@@ -43,7 +46,7 @@ pub struct TTEntry {
 }
 
 enum_from_primitive! {
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum NodeType {
     PVNode = 0,
     AllNode,
@@ -52,11 +55,11 @@ pub enum NodeType {
 }
 
 pub struct TTReadableEntry {
-    key: usize,
-    best_move: Move,
-    depth: u8,
-    score: f32,
-    kind: NodeType,
+    pub key: usize,
+    pub best_move: Move, // Or refutation move if kind is a beta cutoff
+    pub depth: u8,
+    pub score: f32,
+    pub kind: NodeType,
 }
 
 impl TTEntry {
@@ -78,17 +81,27 @@ impl TTReadableEntry {
             kind: NodeType::from_u8((data >> 58) as u8).unwrap(),
         }
     }
+
+    pub fn new(key: usize, best_move: Move, depth: u8, score: f32, kind: NodeType) -> Self {
+        TTReadableEntry {
+            key,
+            best_move,
+            depth,
+            score,
+            kind,
+        }
+    }
 }
 
 // Public interface for the transposition table
 pub trait TTExt {
-    fn get(&self, key: usize) -> Option<TTReadableEntry>;
+    fn probe(&self, key: usize) -> Option<TTReadableEntry>;
     fn try_insert(&self, entry: &TTReadableEntry);
 }
 
 impl TTExt for TranspositionTable {
     // Gets a given entry as a readable entry
-    fn get(&self, key: usize) -> Option<TTReadableEntry> {
+    fn probe(&self, key: usize) -> Option<TTReadableEntry> {
         let index = key & *INDEX_MASK;
         let data = self[index].data.load(Ordering::Acquire);
         if self[index].key.load(Ordering::Acquire) ^ data == key {
@@ -106,7 +119,7 @@ impl TTExt for TranspositionTable {
         let index = key & *INDEX_MASK;
 
         // Policy always replace TODO change it to a better policy
-        self[index].key.store(key, Ordering::Release);
+        self[index].key.store(key ^ data, Ordering::Release);
         self[index].data.store(data, Ordering::Release);
     }
 }

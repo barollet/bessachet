@@ -1,7 +1,7 @@
 #![allow(clippy::unreadable_literal)]
 
 use board::HalfBoard;
-use move_generation::ExtendedMove;
+use move_generation::{ExtendedMove, Move};
 use utils::*;
 
 // A Xoroshiro Pseudo random generator
@@ -17,6 +17,7 @@ impl PRNG {
         }
     }
 
+    #[allow(dead_code)]
     pub fn sseed(&mut self, s0: usize, s1: usize) {
         self.s[0] = s0;
         self.s[1] = s1;
@@ -48,7 +49,7 @@ const ZOBRIST_EN_PASSANT_BASE_OFFSET: usize = 12 * 64 + 1 + 16;
 
 // Static initialisation for the Zobrist hashing
 lazy_static! {
-    static ref zobrist_consts: [usize; ZOBRIST_ARRAY_SIZE] = generate_zobrist_consts();
+    static ref ZOBRIST_CONSTS: [usize; ZOBRIST_ARRAY_SIZE] = generate_zobrist_consts();
 }
 
 fn generate_zobrist_consts() -> [usize; ZOBRIST_ARRAY_SIZE] {
@@ -91,23 +92,23 @@ impl ZobristHasher {
                 } else {
                     Color::BLACK
                 };
-                zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)];
+                zobrist_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, piece, color)];
                 if piece == Piece::PAWN {
                     zobrist_pawn_key ^=
-                        zobrist_consts[zobrist_const_index(square, Piece::PAWN, color)];
+                        ZOBRIST_CONSTS[zobrist_const_index(square, Piece::PAWN, color)];
                 }
             }
         }
 
         // Side to move
         if side_to_move == Color::BLACK {
-            zobrist_key ^= zobrist_consts[ZOBRIST_SIDE_TO_MOVE];
+            zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_SIDE_TO_MOVE];
         }
         // Castling rights
-        zobrist_key ^= zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + castling_rights as usize];
+        zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_CASTLING_BASE_OFFSET + castling_rights as usize];
         // En passant file
         if let Some(square) = position.en_passant {
-            zobrist_key ^= zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+            zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
         }
 
         ZobristHasher {
@@ -117,110 +118,97 @@ impl ZobristHasher {
     }
 
     // Updating helpers
-    pub fn update_piece_capture_zobrist_key(
-        &mut self,
-        square: Square,
-        piece: Piece,
-        color: Color,
-        player_color: Color,
-    ) {
-        // Depending on the player color POV we may have to transpose the square and color
-        match player_color {
-            Color::WHITE => {
-                self.zobrist_key ^= zobrist_consts[zobrist_const_index(square, piece, color)]
-            }
-            Color::BLACK => {
-                self.zobrist_key ^= zobrist_consts
-                    [zobrist_const_index(square.transpose(), piece, color.transpose())]
-            }
-        }
+    fn swap(&mut self, square: Square, piece: Piece, color: Color) {
+        self.zobrist_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, piece, color)];
+    }
+    fn swap_pawn(&mut self, square: Square, color: Color) {
+        self.zobrist_pawn_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, Piece::PAWN, color)];
     }
 
-    pub fn update_piece_move_zobrist_key(
-        &mut self,
-        from: Square,
-        to: Square,
-        piece: Piece,
-        color: Color,
-        player_color: Color,
-    ) {
+    // Updating logic
+    // Update the capture of a piece
+    pub fn update_capture(&mut self, square: Square, piece: Piece, color: Color, pov: Color) {
         // Depending on the player color POV we may have to transpose the square and color
-        match player_color {
-            Color::WHITE => {
-                self.zobrist_key ^= zobrist_consts[zobrist_const_index(from, piece, color)];
-                self.zobrist_key ^= zobrist_consts[zobrist_const_index(to, piece, color)]
-            }
-            Color::BLACK => {
-                self.zobrist_key ^=
-                    zobrist_consts[zobrist_const_index(from.transpose(), piece, color.transpose())];
-                self.zobrist_key ^=
-                    zobrist_consts[zobrist_const_index(to.transpose(), piece, color.transpose())]
-            }
-        }
-    }
-
-    pub fn update_pawn_capture_zobrist_key(&mut self, square: Square, color: Color, pov: Color) {
         match pov {
             Color::WHITE => {
-                self.zobrist_pawn_key ^=
-                    zobrist_consts[zobrist_const_index(square, Piece::PAWN, color)]
+                self.swap(square, piece, color);
             }
             Color::BLACK => {
-                self.zobrist_pawn_key ^= zobrist_consts
-                    [zobrist_const_index(square.transpose(), Piece::PAWN, color.transpose())]
+                self.swap(square.transpose(), piece, color.transpose());
             }
         }
     }
 
-    pub fn update_pawn_move_zobrist_key(
+    // Move a piece in the zobrist key, captures are done in the update_capture function
+    pub fn update_move(
         &mut self,
         from: Square,
         to: Square,
+        piece: Piece,
         color: Color,
         pov: Color,
     ) {
+        // Depending on the player color POV we may have to transpose the square and color
         match pov {
             Color::WHITE => {
-                self.zobrist_pawn_key ^=
-                    zobrist_consts[zobrist_const_index(from, Piece::PAWN, color)];
-                self.zobrist_pawn_key ^= zobrist_consts[zobrist_const_index(to, Piece::PAWN, color)]
+                self.swap(from, piece, color);
+                self.swap(to, piece, color);
             }
             Color::BLACK => {
-                self.zobrist_pawn_key ^= zobrist_consts
-                    [zobrist_const_index(from.transpose(), Piece::PAWN, color.transpose())];
-                self.zobrist_pawn_key ^= zobrist_consts
-                    [zobrist_const_index(to.transpose(), Piece::PAWN, color.transpose())]
+                self.swap(from.transpose(), piece, color.transpose());
+                self.swap(to.transpose(), piece, color.transpose());
             }
         }
     }
 
-    pub fn update_en_passant_zobrist_key(&mut self, ext_mov: ExtendedMove) {
+    pub fn update_pawn_capture(&mut self, square: Square, color: Color, pov: Color) {
+        match pov {
+            Color::WHITE => {
+                self.swap_pawn(square, color);
+            }
+            Color::BLACK => {
+                self.swap_pawn(square.transpose(), color.transpose());
+            }
+        }
+    }
+
+    pub fn update_pawn_move(&mut self, from: Square, to: Square, color: Color, pov: Color) {
+        match pov {
+            Color::WHITE => {
+                self.swap_pawn(from, color);
+                self.swap_pawn(to, color);
+            }
+            Color::BLACK => {
+                self.swap_pawn(from.transpose(), color.transpose());
+                self.swap_pawn(to.transpose(), color.transpose());
+            }
+        }
+    }
+
+    pub fn update_en_passant(&mut self, ext_mov: ExtendedMove) {
         // Reset the old en passant file
         if let Some(old_en_passant_square) = ext_mov.get_en_passant_target() {
-            self.zobrist_key ^= zobrist_consts
+            self.zobrist_key ^= ZOBRIST_CONSTS
                 [ZOBRIST_EN_PASSANT_BASE_OFFSET + old_en_passant_square.file() as usize];
         }
-        if let Some(square) = ext_mov.get_raw_move().get_en_passant_target_square() {
+        if let Some(square) = Move::from(ext_mov).get_en_passant_target_square() {
             // Set the new en passant file
             self.zobrist_key ^=
-                zobrist_consts[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
         }
     }
 
-    pub fn update_castling_rights_zobrist_key(
-        &mut self,
-        old_caslting_rights: u8,
-        new_castling_rights: u8,
-    ) {
+    pub fn update_castling_rights(&mut self, old_caslting_rights: u8, new_castling_rights: u8) {
         if old_caslting_rights != new_castling_rights {
+            // The condition is useless, it is just to save some time
             self.zobrist_key ^=
-                zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + old_caslting_rights as usize];
+                ZOBRIST_CONSTS[ZOBRIST_CASTLING_BASE_OFFSET + old_caslting_rights as usize];
             self.zobrist_key ^=
-                zobrist_consts[ZOBRIST_CASTLING_BASE_OFFSET + new_castling_rights as usize];
+                ZOBRIST_CONSTS[ZOBRIST_CASTLING_BASE_OFFSET + new_castling_rights as usize];
         }
     }
 
-    pub fn update_side_to_move_zobrist_key(&mut self) {
-        self.zobrist_key ^= zobrist_consts[ZOBRIST_SIDE_TO_MOVE];
+    pub fn update_side_to_move(&mut self) {
+        self.zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_SIDE_TO_MOVE];
     }
 }

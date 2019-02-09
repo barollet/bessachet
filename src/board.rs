@@ -247,7 +247,7 @@ impl Board {
     // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, ext_mov: ExtendedMove) {
         let side_to_move = self.side_to_move;
-        let mov = ext_mov.get_raw_move();
+        let mov = Move::from(ext_mov);
         let moved_piece = self[side_to_move][mov.origin_square()].unwrap();
 
         self.halfmove_clock = if moved_piece == Piece::PAWN {
@@ -282,15 +282,6 @@ impl Board {
                 }
             }
 
-            // Updating the pawn hash table index
-            if captured_piece == Piece::PAWN {
-                self.zobrist_hasher.update_pawn_capture_zobrist_key(
-                    mov.destination_square(),
-                    side_to_move.transpose(),
-                    side_to_move,
-                );
-            }
-
             self.push_captured(captured_piece);
 
             self.material_evaluator
@@ -306,15 +297,6 @@ impl Board {
             side_to_move,
         );
 
-        if moved_piece == Piece::PAWN {
-            self.zobrist_hasher.update_pawn_move_zobrist_key(
-                mov.origin_square(),
-                mov.destination_square(),
-                Color::WHITE,
-                side_to_move,
-            );
-        }
-
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
             self.delete_piece(
@@ -328,13 +310,6 @@ impl Board {
 
             self.material_evaluator
                 .capture_piece(Piece::PAWN, side_to_move.transpose());
-
-            // Captured pawn
-            self.zobrist_hasher.update_pawn_capture_zobrist_key(
-                en_passant_captured_square,
-                Color::BLACK,
-                side_to_move,
-            );
         }
 
         // Castling, move the other rook
@@ -355,7 +330,7 @@ impl Board {
         self[side_to_move.transpose()].en_passant = mov
             .get_en_passant_target_square()
             .map(|square| square.transpose());
-        self.zobrist_hasher.update_en_passant_zobrist_key(ext_mov);
+        self.zobrist_hasher.update_en_passant(ext_mov);
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
@@ -377,7 +352,7 @@ impl Board {
             self.material_evaluator
                 .promote_piece(promotion_piece, side_to_move);
 
-            self.zobrist_hasher.update_pawn_capture_zobrist_key(
+            self.zobrist_hasher.update_pawn_capture(
                 mov.destination_square(),
                 side_to_move,
                 side_to_move,
@@ -395,10 +370,10 @@ impl Board {
         }
         let new_castling_rights = self.castling_rights;
         self.zobrist_hasher
-            .update_castling_rights_zobrist_key(ext_mov.get_castling_rights(), new_castling_rights);
+            .update_castling_rights(ext_mov.get_castling_rights(), new_castling_rights);
 
         // Update the side to move
-        self.zobrist_hasher.update_side_to_move_zobrist_key();
+        self.zobrist_hasher.update_side_to_move();
         self.side_to_move = self.side_to_move.transpose();
     }
 
@@ -407,7 +382,7 @@ impl Board {
     pub fn unmake(&mut self, ext_mov: ExtendedMove) {
         // Move the piece back
         let side_that_played = self.side_to_move.transpose();
-        let mov = ext_mov.get_raw_move();
+        let mov = Move::from(ext_mov);
         let moved_piece = self[side_that_played][mov.destination_square()].unwrap();
 
         self.move_piece(
@@ -417,15 +392,6 @@ impl Board {
             Color::WHITE,
             side_that_played,
         );
-
-        if moved_piece == Piece::PAWN {
-            self.zobrist_hasher.update_pawn_move_zobrist_key(
-                mov.origin_square(),
-                mov.destination_square(),
-                Color::WHITE,
-                side_that_played,
-            );
-        }
 
         // Capture
         if mov.is_capture() {
@@ -439,14 +405,6 @@ impl Board {
 
             self.material_evaluator
                 .uncapture_piece(captured_piece, self.side_to_move);
-
-            if captured_piece == Piece::PAWN {
-                self.zobrist_hasher.update_pawn_capture_zobrist_key(
-                    mov.destination_square(),
-                    Color::BLACK,
-                    side_that_played,
-                );
-            }
         }
         // En passant capture
         if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
@@ -459,7 +417,7 @@ impl Board {
             self.material_evaluator
                 .uncapture_piece(Piece::PAWN, self.side_to_move);
 
-            self.zobrist_hasher.update_pawn_capture_zobrist_key(
+            self.zobrist_hasher.update_pawn_capture(
                 en_passant_captured_square,
                 Color::BLACK,
                 side_that_played,
@@ -496,7 +454,7 @@ impl Board {
             self.material_evaluator
                 .unpromote_piece(promotion_piece, side_that_played);
 
-            self.zobrist_hasher.update_pawn_capture_zobrist_key(
+            self.zobrist_hasher.update_pawn_capture(
                 mov.origin_square(),
                 side_that_played,
                 side_that_played,
@@ -510,16 +468,17 @@ impl Board {
         self[side_to_move].en_passant = self[side_that_played]
             .en_passant
             .map(|square| square.transpose());
-        self.zobrist_hasher.update_en_passant_zobrist_key(ext_mov);
+        self.zobrist_hasher.update_en_passant(ext_mov);
 
         let old_caslting_rights = self.castling_rights;
         let restored_castling_rights = ext_mov.get_castling_rights();
         self.zobrist_hasher
-            .update_castling_rights_zobrist_key(old_caslting_rights, restored_castling_rights);
+            .update_castling_rights(old_caslting_rights, restored_castling_rights);
 
         self.halfmove_clock = ext_mov.get_halfmove_clock();
         self.castling_rights = restored_castling_rights;
 
+        self.zobrist_hasher.update_side_to_move();
         self.side_to_move = self.side_to_move.transpose();
     }
 
@@ -535,48 +494,30 @@ impl Board {
 
     // Creates a piece of the given color on the given player's board (on black board, black has
     // white pieces)
-    fn create_piece(
-        &mut self,
-        square: Square,
-        piece: Piece,
-        piece_color: Color,
-        player_color: Color,
-    ) {
-        self.zobrist_hasher.update_piece_capture_zobrist_key(
-            square,
-            piece,
-            piece_color,
-            player_color,
-        );
+    fn create_piece(&mut self, square: Square, piece: Piece, piece_color: Color, pov: Color) {
+        self.zobrist_hasher
+            .update_capture(square, piece, piece_color, pov);
+        // Updating the pawn hash table index
+        if piece == Piece::PAWN {
+            self.zobrist_hasher
+                .update_pawn_capture(square, piece_color, pov);
+        }
 
-        self[player_color].create_piece(square, piece, piece_color);
-        self[player_color.transpose()].create_piece(
-            square.transpose(),
-            piece,
-            piece_color.transpose(),
-        );
+        self[pov].create_piece(square, piece, piece_color);
+        self[pov.transpose()].create_piece(square.transpose(), piece, piece_color.transpose());
     }
 
-    fn delete_piece(
-        &mut self,
-        square: Square,
-        piece: Piece,
-        piece_color: Color,
-        player_color: Color,
-    ) {
-        self.zobrist_hasher.update_piece_capture_zobrist_key(
-            square,
-            piece,
-            piece_color,
-            player_color,
-        );
+    fn delete_piece(&mut self, square: Square, piece: Piece, piece_color: Color, pov: Color) {
+        self.zobrist_hasher
+            .update_capture(square, piece, piece_color, pov);
+        // Updating the pawn hash table index
+        if piece == Piece::PAWN {
+            self.zobrist_hasher
+                .update_pawn_capture(square, piece_color, pov);
+        }
 
-        self[player_color].delete_piece(square, piece, piece_color);
-        self[player_color.transpose()].delete_piece(
-            square.transpose(),
-            piece,
-            piece_color.transpose(),
-        );
+        self[pov].delete_piece(square, piece, piece_color);
+        self[pov.transpose()].delete_piece(square.transpose(), piece, piece_color.transpose());
     }
 
     // This moves a piece of the given side color
@@ -586,18 +527,18 @@ impl Board {
         to: Square,
         piece: Piece,
         piece_color: Color,
-        player_color: Color,
+        pov: Color,
     ) {
-        self.zobrist_hasher.update_piece_move_zobrist_key(
-            from,
-            to,
-            piece,
-            piece_color,
-            player_color,
-        );
+        self.zobrist_hasher
+            .update_move(from, to, piece, piece_color, pov);
+        // Updating the pawn hash table index
+        if piece == Piece::PAWN {
+            self.zobrist_hasher
+                .update_pawn_move(from, to, piece_color, pov);
+        }
 
-        self[player_color].move_piece(from, to, piece, piece_color);
-        self[player_color.transpose()].move_piece(
+        self[pov].move_piece(from, to, piece, piece_color);
+        self[pov.transpose()].move_piece(
             from.transpose(),
             to.transpose(),
             piece,
@@ -611,6 +552,14 @@ impl Board {
         LegalMoveGenerator::new(
             &self.halfboards[side_to_move],
             side_to_move,
+            self.create_decorator(),
+        )
+    }
+
+    pub fn create_decorator(&self) -> Decorator {
+        let side_to_move = self.side_to_move;
+        Decorator::new(
+            self.halfboards[side_to_move].en_passant,
             self.castling_rights,
             self.halfmove_clock,
         )

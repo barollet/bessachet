@@ -5,6 +5,8 @@ pub use self::material_evaluation::MaterialEvaluator;
 
 use board::Board;
 
+pub const MATE_SCORE: f32 = -1000.0;
+
 impl Board {
     // Evaluates the position of the given board
     // TODO better evaluation

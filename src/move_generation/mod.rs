@@ -123,6 +123,33 @@ fn bishop_xray_attack(square: Square, occupancy: BitBoard) -> BitBoard {
     xray_attack(magic_entry, occupancy, bishop_offset)
 }
 
+// Move decorator, this is basically a small buffer of info to make and unmake moves
+#[derive(Copy, Clone)]
+pub struct Decorator {
+    en_passant: Option<Square>,
+    castling_rights: u8,
+    halfmove_clock: u8,
+}
+
+impl Decorator {
+    pub fn new(en_passant: Option<Square>, castling_rights: u8, halfmove_clock: u8) -> Decorator {
+        Decorator {
+            en_passant,
+            castling_rights,
+            halfmove_clock,
+        }
+    }
+
+    // Decorates a move to be fetched for iteration with irreversible states
+    pub fn decorate_move(&self, mov: Move) -> ExtendedMove {
+        ExtendedMove::from(mov)
+            .set_castling_rights(self.castling_rights)
+            // En passant square is given from the side to play pov
+            .set_en_passant_target(self.en_passant.map_or(0, |square| square.0))
+            .set_halfmove_clock(self.halfmove_clock)
+    }
+}
+
 // This struct holds a reference to a Board and generates the legal moves from this POV
 // at the time the struct was instanciated (so we have to reinstantiate a LegalMoveGenerator after
 // every move)
@@ -163,20 +190,13 @@ pub struct LegalMoveGenerator {
     // copies of the caslting rights, previous en passant state and halfmove clock
     // NOTE: the en passant square is held in the HalfBoard, so we need to restore the state to use
     // it
-    en_passant: Option<Square>,
-    castling_rights: u8,
-    halfmove_clock: u8,
+    decorator: Decorator,
 }
 
 impl LegalMoveGenerator {
     // Initialize a new LegalMoveGenerator by computing pinned pieces
     // It takes a reference to the current board and the color of the player we want to move
-    pub fn new(
-        halfboard: &HalfBoard,
-        color: Color,
-        castling_rights: u8,
-        halfmove_clock: u8,
-    ) -> Self {
+    pub fn new(halfboard: &HalfBoard, color: Color, decorator: Decorator) -> Self {
         let mut generator = Self {
             color,
             move_stack: [NULL_MOVE; 128], // Placeholders to initiatlize memory
@@ -190,9 +210,7 @@ impl LegalMoveGenerator {
 
             number_of_legal_moves: 0,
             next_iterator_move: 0,
-            en_passant: halfboard.en_passant,
-            castling_rights,
-            halfmove_clock,
+            decorator,
         };
 
         generator.initialize(halfboard);
@@ -269,15 +287,6 @@ impl LegalMoveGenerator {
             self.push_move(Move::quiet_move(origin_square, dest_square));
         }
     }
-
-    // Decorates the next move to be fetched for iteration with irreversible states
-    fn decorate_move(&self, mov: Move) -> ExtendedMove {
-        ExtendedMove::from_raw_move(mov)
-            .set_castling_rights(self.castling_rights)
-            // En passant square is given from the side to play pov
-            .set_en_passant_target(self.en_passant.map_or(0, |square| square.0))
-            .set_halfmove_clock(self.halfmove_clock)
-    }
 }
 
 // Logic helpers
@@ -291,7 +300,7 @@ impl LegalMoveGenerator {
         empty_squares: &BlackWhiteAttribute<BitBoard>,
         check_squares: &mut BlackWhiteAttribute<BitBoard>,
     ) -> bool {
-        (self.castling_rights & caslting_rights[self.color] != 0) // right to castle kingside
+        (self.decorator.castling_rights & caslting_rights[self.color] != 0) // right to castle kingside
         && (empty_squares[self.color] & board.occupied_squares() == 0) // none of the squares on the way are occupied
         && (check_squares[self.color].all(|square| !self.is_in_check(board, square))) // squares crossed by the king are in check
     }
@@ -327,7 +336,7 @@ impl LegalMoveGenerator {
 
     // Checks that the en passant capture will not discover the king
     fn can_take_en_passant(&self, board: &HalfBoard, capturing_square: Square) -> bool {
-        let captured_square = self.en_passant.unwrap();
+        let captured_square = self.decorator.en_passant.unwrap();
         let after_en_passant_occupancy = board
             .occupied_squares()
             .remove_square(capturing_square)
@@ -595,7 +604,9 @@ impl LegalMoveGenerator {
         }
 
         // En passant capture
-        if self.en_passant.is_some() && self.en_passant.unwrap() == captured_square {
+        if self.decorator.en_passant.is_some()
+            && self.decorator.en_passant.unwrap() == captured_square
+        {
             for capturing_square in
                 board.en_passant_capture_start_squares() & board[Color::WHITE] & board[Piece::PAWN]
             {
@@ -895,7 +906,7 @@ impl Iterator for LegalMoveGenerator {
             self.next_iterator_move += 1;
 
             // Decorate the move and returns it
-            Some(self.decorate_move(iter_move))
+            Some(self.decorator.decorate_move(iter_move))
         } else {
             None
         }
@@ -919,7 +930,7 @@ impl<'a> Iterator for CaptureIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.move_generator.next() {
             Some(next_move) => {
-                if next_move.get_raw_move().has_flags(CAPTURE_FLAG) {
+                if Move::from(next_move).has_flags(CAPTURE_FLAG) {
                     Some(next_move)
                 } else {
                     None
@@ -949,7 +960,7 @@ impl Board {
         }
         let generator = self.create_legal_move_generator();
         for ext_mov in generator {
-            let mov = ext_mov.get_raw_move();
+            let mov = Move::from(ext_mov);
             if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
                 self.make(ext_mov);
                 return;
@@ -966,9 +977,9 @@ impl Board {
         let generator = self.create_legal_move_generator();
         for mov in generator {
             if self.side_to_move == Color::BLACK {
-                println!("{}", mov.get_raw_move().transpose());
+                println!("{}", Move::from(mov).transpose());
             } else {
-                println!("{}", mov.get_raw_move());
+                println!("{}", Move::from(mov));
             }
         }
     }

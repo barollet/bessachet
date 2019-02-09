@@ -17,7 +17,7 @@ use enum_primitive::FromPrimitive;
 //  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
 #[derive(Clone, Copy)]
 pub struct Move(u16);
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct ExtendedMove(u64);
 
 const SPECIAL0_FLAG: u16 = 1 << 12;
@@ -157,15 +157,6 @@ impl Move {
 }
 
 impl ExtendedMove {
-    pub fn from_raw_move(raw_move: Move) -> ExtendedMove {
-        ExtendedMove(u64::from(raw_move.0))
-    }
-
-    pub fn get_raw_move(self) -> Move {
-        #[allow(clippy::cast_lossless)]
-        Move(self.0 as u16)
-    }
-
     // value has to have trailing zeros not to overwrite some other states
     pub fn set_castling_rights(self, value: u8) -> Self {
         ExtendedMove(self.0 | u64::from(value) << CASTLING_RIGHTS_BITS_OFFSET)
@@ -229,6 +220,18 @@ impl fmt::Display for Move {
                 _ => "",
             }
         )
+    }
+}
+
+impl From<ExtendedMove> for Move {
+    fn from(ext_mov: ExtendedMove) -> Move {
+        Move(ext_mov.0 as u16)
+    }
+}
+
+impl From<Move> for ExtendedMove {
+    fn from(raw_move: Move) -> ExtendedMove {
+        ExtendedMove(raw_move.0 as u64)
     }
 }
 

@@ -12,6 +12,7 @@ mod utils;
 
 use board::Board;
 
+use hash_tables::*;
 use utils::*;
 
 fn main() {
@@ -19,13 +20,21 @@ fn main() {
         Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
             .unwrap();
 
-    let mut other_board = board.clone();
-    other_board.play_move("g2h3");
-    other_board.play_move("b4c3");
-    println!("eval other {}", other_board.evaluation());
-
-    println!("eval {}", board.evaluation());
-    println!("{}", board);
-    let (best_mov, score) = board.best_move(3);
-    println!("best move and score: {} {}", best_mov.get_raw_move(), score);
+    board.search(7);
+    while let Some(tt_entry) = TRANSPOSITION_TABLE.probe(board.zobrist_hasher.zobrist_key) {
+        println!(
+            "{}",
+            if board.side_to_move == Color::WHITE {
+                tt_entry.best_move
+            } else {
+                tt_entry.best_move.transpose()
+            }
+        );
+        let decorator = board.create_decorator();
+        board.make(decorator.decorate_move(tt_entry.best_move));
+        println!(
+            "value: {}",
+            board.material_evaluator.evaluation(Color::WHITE)
+        );
+    }
 }

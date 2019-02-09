@@ -1,5 +1,7 @@
 use board::Board;
-use move_generation::{ExtendedMove, NULL_EXTMOVE};
+use evaluation::*;
+use hash_tables::*;
+use move_generation::{ExtendedMove, Move, NULL_EXTMOVE};
 use std::f32;
 
 /* Basic sequential alpha beta implementation */
@@ -14,34 +16,29 @@ impl Board {
             alpha = stand_pat;
         }
 
+        macro_rules! quiescence_proc {
+            ($mov: ident) => {
+                self.make($mov);
+                let score = -self.quiesce(-beta, -alpha);
+                self.unmake($mov);
+
+                if score >= beta {
+                    return beta;
+                }
+                if score > alpha {
+                    alpha = score;
+                }
+            };
+        }
         // If check then all moves
-        // TODO factor this (maybe in a macro)
         let mut move_generator = self.create_legal_move_generator();
         if move_generator.is_king_checked() {
             for mov in move_generator {
-                self.make(mov);
-                let score = -self.quiesce(-beta, -alpha);
-                self.unmake(mov);
-
-                if score >= beta {
-                    return beta;
-                }
-                if score > alpha {
-                    alpha = score;
-                }
+                quiescence_proc!(mov);
             }
         } else {
             for capture in move_generator.capture_iterator() {
-                self.make(capture);
-                let score = -self.quiesce(-beta, -alpha);
-                self.unmake(capture);
-
-                if score >= beta {
-                    return beta;
-                }
-                if score > alpha {
-                    alpha = score;
-                }
+                quiescence_proc!(capture);
             }
         };
 
@@ -49,42 +46,80 @@ impl Board {
     }
 
     pub fn alpha_beta(&mut self, mut alpha: f32, beta: f32, depth_left: u8) -> f32 {
+        let key = self.zobrist_hasher.zobrist_key;
+        // Check for TT Hit
+        if let Some(tt_entry) = TRANSPOSITION_TABLE.probe(key) {
+            // TT Hit
+            if tt_entry.depth >= depth_left {
+                return tt_entry.score;
+            }
+        }
         // Quiesce search to prevent from the horizon effect
         if depth_left == 0 {
             return self.quiesce(alpha, beta);
         }
+
+        // TODO merge alpha and max score?
+        let mut best_mov = NULL_EXTMOVE;
+        let mut max_score = f32::NEG_INFINITY;
+        let mut node_type = NodeType::AllNode;
+
         let move_generator = self.create_legal_move_generator();
         for mov in move_generator {
             self.make(mov);
             let score = -self.alpha_beta(-beta, -alpha, depth_left - 1);
             self.unmake(mov);
 
+            if score > max_score {
+                max_score = score;
+                best_mov = mov;
+            }
+
             if score >= beta {
+                // Write result in TT
+                TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
+                    key,
+                    Move::from(mov), // Refutation move
+                    depth_left,
+                    score,
+                    NodeType::CutNode,
+                ));
                 return beta;
             }
             if score > alpha {
+                node_type = NodeType::PVNode;
                 alpha = score;
             }
         }
 
-        alpha
+        // Write result in TT
+        // Alpha move or PV move
+        // No moves means mate
+        if best_mov == NULL_EXTMOVE {
+            TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
+                key,
+                Move::from(NULL_EXTMOVE),
+                u8::max_value(),
+                MATE_SCORE,
+                NodeType::CutNode,
+            ));
+
+            MATE_SCORE
+        } else {
+            // Otherwise we insert the PV node from here
+            TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
+                key,
+                Move::from(best_mov),
+                depth_left,
+                max_score,
+                node_type,
+            ));
+
+            alpha
+        }
     }
 
-    pub fn best_move(&mut self, depth: u8) -> (ExtendedMove, f32) {
-        let move_generator = self.create_legal_move_generator();
-        let mut max_score = f32::NEG_INFINITY;
-        let mut best_move = NULL_EXTMOVE;
-        for mov in move_generator {
-            self.make(mov);
-            let score = -self.alpha_beta(f32::NEG_INFINITY, f32::INFINITY, depth);
-            self.unmake(mov);
-
-            if score > max_score {
-                max_score = score;
-                best_move = mov;
-            }
-        }
-
-        (best_move, max_score)
+    pub fn search(&mut self, depth: u8) {
+        self.alpha_beta(f32::NEG_INFINITY, f32::INFINITY, depth);
     }
 }

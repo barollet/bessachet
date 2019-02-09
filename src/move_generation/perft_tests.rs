@@ -4,6 +4,8 @@
 
 use board::Board;
 
+use move_generation::Move;
+
 use utils::*;
 
 fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
@@ -19,9 +21,9 @@ fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
             println!(
                 "{}: {}",
                 if board.side_to_move == Color::WHITE {
-                    mov.get_raw_move()
+                    Move::from(mov)
                 } else {
-                    mov.get_raw_move().transpose()
+                    Move::from(mov).transpose()
                 },
                 partial_sum
             );
@@ -42,12 +44,16 @@ fn perft(board: &mut Board, depth: u8) -> usize {
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
+    let init_key = board.zobrist_hasher.zobrist_key;
+
     assert_eq!(perft(&mut board, 6), 119_060_324);
     //assert_eq!(perft(&mut board, 5), 4_865_609);
     //assert_eq!(perft(&mut board, 4), 197_281);
     //assert_eq!(perft(&mut board, 3), 8902);
     //assert_eq!(perft(&mut board, 2), 400);
     //assert_eq!(perft(&mut board, 1), 20);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
 
 #[test]
@@ -56,16 +62,22 @@ fn perft_kiwipete() {
         Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ")
             .unwrap();
 
+    let init_key = board.zobrist_hasher.zobrist_key;
+
     assert_eq!(perft(&mut board, 5), 193_690_690);
     //assert_eq!(perft(&mut board, 4), 4_085_603);
     //assert_eq!(perft(&mut board, 3), 97862);
     //assert_eq!(perft(&mut board, 2), 2039);
     //assert_eq!(perft(&mut board, 1), 48);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
 
 #[test]
 fn perft_sparse_board() {
     let mut board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ").unwrap();
+
+    let init_key = board.zobrist_hasher.zobrist_key;
 
     assert_eq!(perft(&mut board, 7), 178_633_661);
     //assert_eq!(perft(&mut board, 6), 11_030_083);
@@ -74,6 +86,8 @@ fn perft_sparse_board() {
     //assert_eq!(perft(&mut board, 3), 2812);
     //assert_eq!(perft(&mut board, 2), 191);
     //assert_eq!(perft(&mut board, 1), 14);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
 
 #[test]
@@ -82,21 +96,29 @@ fn perft_mirror() {
         Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1")
             .unwrap();
 
+    let init_key = board.zobrist_hasher.zobrist_key;
+
     assert_eq!(perft(&mut board, 5), 15_833_292);
     //assert_eq!(perft(&mut board, 4), 422_333);
     //assert_eq!(perft(&mut board, 3), 9467);
     //assert_eq!(perft(&mut board, 2), 264);
     //assert_eq!(perft(&mut board, 1), 6);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 
     let mut board =
         Board::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1")
             .unwrap();
 
+    let init_key = board.zobrist_hasher.zobrist_key;
+
     assert_eq!(perft(&mut board, 5), 15_833_292);
     //assert_eq!(perft(&mut board, 4), 422_333);
     //assert_eq!(perft(&mut board, 3), 9467);
     //assert_eq!(perft(&mut board, 2), 264);
     //assert_eq!(perft(&mut board, 1), 6);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
 
 #[test]
@@ -104,11 +126,15 @@ fn perft_talkchess() {
     let mut board =
         Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
 
+    let init_key = board.zobrist_hasher.zobrist_key;
+
     assert_eq!(perft(&mut board, 5), 89_941_194);
     //assert_eq!(perft(&mut board, 4), 2_103_487);
     //assert_eq!(perft(&mut board, 3), 62_379);
     //assert_eq!(perft(&mut board, 2), 1486);
     //assert_eq!(perft(&mut board, 1), 44);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
 
 #[test]
@@ -117,11 +143,15 @@ fn perft_edwards() {
         Board::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10")
             .unwrap();
 
-    assert_eq!(perft(&mut board, 5), 164_075_551);
+    let init_key = board.zobrist_hasher.zobrist_key;
+
+    //assert_eq!(perft(&mut board, 5), 164_075_551);
     //assert_eq!(perft(&mut board, 4), 3_894_594);
-    //assert_eq!(perft(&mut board, 3), 89_890);
+    assert_eq!(perft(&mut board, 3), 89_890);
     //assert_eq!(perft(&mut board, 2), 2079);
     //assert_eq!(perft(&mut board, 1), 46);
+
+    assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
 
 // TODO do a real benchmark with a lot more perft files
