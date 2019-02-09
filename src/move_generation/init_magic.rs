@@ -1,7 +1,7 @@
 use std::ptr;
 
 use move_generation::{MagicEntry, SlidingAttackTable, SLIDING_ATTACK_TABLE};
-use utils::{BitBoard, Square};
+use utils::*;
 
 // Note: see the magic factors at the end of this file
 
@@ -116,20 +116,20 @@ fn direction_blockers_mask<F, G>(
 
 // Get a bishop attack on an empty board
 fn bishop_black_mask(square: u8) -> BitBoard {
-    !bishop_key(square, BitBoard::empty())
+    !bishop_key(square, BBWraper::empty())
 }
 
 pub fn bishop_mask(square: u8) -> BitBoard {
-    bishop_key(square, BitBoard::empty())
+    bishop_key(square, BBWraper::empty())
 }
 
 fn bishop_attack_on_empty_board(square: u8) -> BitBoard {
-    bishop_attack(square, BitBoard::empty())
+    bishop_attack(square, BBWraper::empty())
 }
 
 // Get a bishop key for the given bitboard of blockers
 pub fn bishop_key(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BitBoard::empty();
+    let mut result: BitBoard = BBWraper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -166,7 +166,7 @@ pub fn bishop_key(square: u8, blockers: BitBoard) -> BitBoard {
 
 // Get a bishop attack for the given bitboard of blockers
 pub fn bishop_attack(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BitBoard::empty();
+    let mut result: BitBoard = BBWraper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -202,20 +202,20 @@ pub fn bishop_attack(square: u8, blockers: BitBoard) -> BitBoard {
 }
 
 fn rook_black_mask(square: u8) -> BitBoard {
-    !rook_key(square, BitBoard::empty())
+    !rook_key(square, BBWraper::empty())
 }
 
 pub fn rook_mask(square: u8) -> BitBoard {
-    rook_key(square, BitBoard::empty())
+    rook_key(square, BBWraper::empty())
 }
 
 fn rook_attack_empty_board(square: u8) -> BitBoard {
-    rook_attack(square, BitBoard::empty())
+    rook_attack(square, BBWraper::empty())
 }
 
 // Get a rook key for magic table for the given bitboard of blockers
 pub fn rook_key(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BitBoard::empty();
+    let mut result: BitBoard = BBWraper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -251,7 +251,7 @@ pub fn rook_key(square: u8, blockers: BitBoard) -> BitBoard {
 }
 
 pub fn rook_attack(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BitBoard::empty();
+    let mut result: BitBoard = BBWraper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -287,11 +287,11 @@ pub fn rook_attack(square: u8, blockers: BitBoard) -> BitBoard {
 }
 
 pub fn index_to_key(index: usize, bits: u32, mut mask: BitBoard) -> BitBoard {
-    let mut result = BitBoard::empty();
+    let mut result = BBWraper::empty();
     for i in 0..bits {
         let j = mask.pop_lsb_as_square().0;
         if index & (1 << i) != 0 {
-            result |= BitBoard(1u64 << j);
+            result |= 1u64 << j;
         }
     }
     result
@@ -299,12 +299,12 @@ pub fn index_to_key(index: usize, bits: u32, mut mask: BitBoard) -> BitBoard {
 
 // Computes the offset in the attack table from the relevant occupancy bits and a given magic factor
 pub fn rook_offset(key: BitBoard, magic: u64) -> usize {
-    (key.0.overflowing_mul(magic).0 >> (64 - 12)) as usize
+    (key.overflowing_mul(magic).0 >> (64 - 12)) as usize
 }
 
 // Computes the offset in the attack table from the relevant occupancy bits and a given magic factor
 pub fn bishop_offset(key: BitBoard, magic: u64) -> usize {
-    (key.0.overflowing_mul(magic).0 >> (64 - 9)) as usize
+    (key.overflowing_mul(magic).0 >> (64 - 9)) as usize
 }
 
 // Magic bitboards attack table initiatlization

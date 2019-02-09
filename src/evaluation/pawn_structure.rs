@@ -6,23 +6,23 @@ use utils::*;
 
 // Indexed by file and return adjacent files
 const ISOLATION_MASK: [(BitBoard, BitBoard); 6] = [
-    (BitBoard(file(0) | file(2)), BitBoard(file(1))),
-    (BitBoard(file(1) | file(3)), BitBoard(file(2))),
-    (BitBoard(file(2) | file(4)), BitBoard(file(3))),
-    (BitBoard(file(3) | file(5)), BitBoard(file(4))),
-    (BitBoard(file(4) | file(6)), BitBoard(file(5))),
-    (BitBoard(file(5) | file(7)), BitBoard(file(6))),
+    (file(0) | file(2), file(1)),
+    (file(1) | file(3), file(2)),
+    (file(2) | file(4), file(3)),
+    (file(3) | file(5), file(4)),
+    (file(4) | file(6), file(5)),
+    (file(5) | file(7), file(6)),
 ];
 
 const BACKWARD_MASK: [(BitBoard, BitBoard); 8] = [
-    (BitBoard(file(1)), BitBoard(file(0))),
-    (BitBoard(file(0) | file(2)), BitBoard(file(1))),
-    (BitBoard(file(1) | file(3)), BitBoard(file(2))),
-    (BitBoard(file(2) | file(4)), BitBoard(file(3))),
-    (BitBoard(file(3) | file(5)), BitBoard(file(4))),
-    (BitBoard(file(4) | file(6)), BitBoard(file(5))),
-    (BitBoard(file(5) | file(7)), BitBoard(file(6))),
-    (BitBoard(file(6)), BitBoard(file(7))),
+    (file(1), file(0)),
+    (file(0) | file(2), file(1)),
+    (file(1) | file(3), file(2)),
+    (file(2) | file(4), file(3)),
+    (file(3) | file(5), file(4)),
+    (file(4) | file(6), file(5)),
+    (file(5) | file(7), file(6)),
+    (file(6), file(7)),
 ];
 
 impl Board {

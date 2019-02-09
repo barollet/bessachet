@@ -150,7 +150,7 @@ impl IndexMut<PieceColorPair> for MaterialEvaluator {
 impl HalfBoard {
     // Returns the number of pieces of the given color on this HalfBoard
     fn get_number_of(&self, piece: Piece, color: Color) -> i16 {
-        (self[piece] & self[color]).0.count_ones() as i16
+        (self[piece] & self[color]).count_ones() as i16
     }
 }
 

@@ -6,17 +6,17 @@ use move_generation::init_magic::{
     bishop_attack, bishop_mask, bishop_offset, index_to_key, rook_attack, rook_mask, rook_offset,
 };
 
-use utils::BitBoard;
+use utils::*;
 
 fn key_iterator(mask: BitBoard) -> impl Iterator<Item = BitBoard> {
-    let n = mask.population();
+    let n = mask.count_ones();
     println!("{} {:?}", n, mask);
     (0..(1 << n)).map(move |index| index_to_key(index, n, mask) | !mask)
 }
 
 // mask is given as a white mask
 fn test_key(mask: BitBoard) -> bool {
-    let mut keys: [BitBoard; 4096] = [BitBoard::empty(); 4096];
+    let mut keys: [BitBoard; 4096] = [BBWraper::empty(); 4096];
 
     for (i, key) in key_iterator(mask).enumerate() {
         // pass if different from all the precedent ones
@@ -40,7 +40,7 @@ fn test_magic_entry(
     bishop: bool,
 ) -> bool {
     let mut offsets: [usize; 4096] = [0; 4096];
-    let mut keys: [BitBoard; 4096] = [BitBoard::empty(); 4096];
+    let mut keys: [BitBoard; 4096] = [BBWraper::empty(); 4096];
     for (i, key) in key_iterator(!entry.black_mask).enumerate() {
         let offset = if bishop {
             bishop_offset(key, entry.magic)

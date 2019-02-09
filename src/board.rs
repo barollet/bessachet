@@ -79,17 +79,17 @@ impl HalfBoard {
         // See utils.rs for the piece order in the array
         let mut board = Self {
             pieces: [
-                BitBoard::new(0x4200000000000042), // Knights
-                BitBoard::new(0x2400000000000024), // Bishops
-                BitBoard::new(0x8100000000000081), // Rooks
-                BitBoard::new(0x1000000000000010), // Queens
-                BitBoard::new(0x00ff00000000ff00), // Pawns
-                BitBoard::new(0x0800000000000008),
+                0x4200000000000042, // Knights
+                0x2400000000000024, // Bishops
+                0x8100000000000081, // Rooks
+                0x1000000000000010, // Queens
+                0x00ff00000000ff00, // Pawns
+                0x0800000000000008,
             ], // Kings
 
             occupancy: BlackWhiteAttribute::new(
-                BitBoard::new(0xffff000000000000), // Black
-                BitBoard::new(0x000000000000ffff),
+                0xffff000000000000, // Black
+                0x000000000000ffff,
             ), // White
 
             en_passant: None,
@@ -104,8 +104,8 @@ impl HalfBoard {
 
     pub fn empty_board() -> Self {
         Self {
-            pieces: [BitBoard::new(0); 6],
-            occupancy: BlackWhiteAttribute::new(BitBoard::empty(), BitBoard::empty()),
+            pieces: [0; 6],
+            occupancy: BlackWhiteAttribute::new(BBWraper::empty(), BBWraper::empty()),
 
             en_passant: None,
 
@@ -117,7 +117,7 @@ impl HalfBoard {
     // Has to be used at initialization because the empty squares are not set back to None
     fn fill_88(&mut self) {
         for piece in &PIECES_LIST {
-            for square in self[*piece] {
+            for square in BBWraper(self[*piece]) {
                 self[square] = Some(*piece);
             }
         }
@@ -132,7 +132,7 @@ impl HalfBoard {
     }
 
     pub fn white_king_square(&self) -> Square {
-        (self[Color::WHITE] & self[Piece::KING]).as_square()
+        Square::from(self[Color::WHITE] & self[Piece::KING])
     }
 
     // Helper functions to make and unmake moves
@@ -160,7 +160,7 @@ impl HalfBoard {
         if let Some(square) = self.en_passant {
             EN_PASSANT_TABLE[(square.0 - 32) as usize]
         } else {
-            BitBoard::empty()
+            BBWraper::empty()
         }
     }
 }
@@ -656,7 +656,7 @@ impl HalfBoard {
                 } else {
                     pos -= 1;
 
-                    let singly_populated_bitboard = BitBoard::new(1 << (8 * i + pos));
+                    let singly_populated_bitboard = 1 << (8 * i + pos);
                     // Piece bitboard
                     let new_piece = match c.to_ascii_lowercase() {
                         'p' => Piece::PAWN,
