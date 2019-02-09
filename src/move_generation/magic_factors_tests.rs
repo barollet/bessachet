@@ -68,7 +68,6 @@ fn test_magic_entry(
 // /!\ This tests need the masking and attack generation to be correct
 
 #[test]
-#[ignore]
 // Tests that the key generation is distinct
 fn magic_key_generation() {
     // bishop keys
@@ -82,7 +81,6 @@ fn magic_key_generation() {
 }
 
 #[test]
-#[ignore]
 // Test that we have no overlapping between different attack sets
 fn magic_no_bad_overlapping() {
     // bishop collisions

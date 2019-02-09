@@ -132,7 +132,7 @@ impl HalfBoard {
     }
 
     pub fn white_king_square(&self) -> Square {
-        Square::from(self[Color::WHITE] & self[Piece::KING])
+        *SqWrapper::from(self[Color::WHITE] & self[Piece::KING])
     }
 
     // Helper functions to make and unmake moves
@@ -142,14 +142,14 @@ impl HalfBoard {
     }
 
     fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
-        let reset_mask = !square.as_bitboard();
+        let reset_mask = !*BBWraper::from(square);
         self[piece] &= reset_mask;
         self[color] &= reset_mask;
         self[square] = None;
     }
 
     fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
-        let set_mask = square.as_bitboard();
+        let set_mask = *BBWraper::from(square);
         self[piece] |= set_mask;
         self[color] |= set_mask;
         self[square] = Some(piece);
@@ -158,7 +158,7 @@ impl HalfBoard {
     // Returns a bitboard of pawn candidates to capture en passant
     pub fn en_passant_capture_start_squares(&self) -> BitBoard {
         if let Some(square) = self.en_passant {
-            EN_PASSANT_TABLE[(square.0 - 32) as usize]
+            EN_PASSANT_TABLE[(square - 32) as usize]
         } else {
             BBWraper::empty()
         }
@@ -383,7 +383,7 @@ impl Board {
 
         mov.decorate(
             old_caslting_rights,
-            old_en_passant_square.map_or(0, |square| square.0),
+            old_en_passant_square.unwrap_or(0),
             old_halfmove_clock,
         )
     }
@@ -626,13 +626,13 @@ impl Index<Square> for HalfBoard {
     type Output = Option<Piece>;
 
     fn index(&self, square: Square) -> &Self::Output {
-        &self.board_88[square.as_index()]
+        &self.board_88[square as usize]
     }
 }
 
 impl IndexMut<Square> for HalfBoard {
     fn index_mut(&mut self, square: Square) -> &mut Option<Piece> {
-        &mut self.board_88[square.as_index()]
+        &mut self.board_88[square as usize]
     }
 }
 
@@ -683,7 +683,7 @@ impl HalfBoard {
         // En passant
         if fen_parts[3].len() == 2 {
             let chars: Vec<_> = fen_parts[3].chars().collect();
-            board.en_passant = Some(Square::from_char_file_rank(chars[0], chars[1]));
+            board.en_passant = Some(SqWrapper::from_char_file_rank(chars[0], chars[1]));
         }
 
         board.fill_88();
@@ -741,7 +741,7 @@ impl fmt::Display for Board {
             let halfboard = &self[Color::WHITE];
             for j in (0..8).rev() {
                 if let Some(piece) = halfboard.board_88[8 * i + j] {
-                    if halfboard[Color::WHITE].has_square(Square::new((8 * i + j) as u8)) {
+                    if halfboard[Color::WHITE].has_square((8 * i + j) as u8) {
                         write!(f, "{}", piece.to_char().to_uppercase().next().unwrap())?;
                     } else {
                         write!(f, "{}", piece.to_char())?;
@@ -754,7 +754,7 @@ impl fmt::Display for Board {
             let halfboard = &self[Color::BLACK];
             for j in (0..8).rev() {
                 if let Some(piece) = halfboard.board_88[8 * i + j] {
-                    if halfboard[Color::WHITE].has_square(Square::new((8 * i + j) as u8)) {
+                    if halfboard[Color::WHITE].has_square((8 * i + j) as u8) {
                         write!(f, "{}", piece.to_char().to_uppercase().next().unwrap())?;
                     } else {
                         write!(f, "{}", piece.to_char())?;
@@ -818,7 +818,7 @@ impl fmt::Display for HalfBoard {
         for i in (0..8).rev() {
             for j in (0..8).rev() {
                 if let Some(piece) = self.board_88[8 * i + j] {
-                    if self[Color::WHITE].has_square(Square::new((8 * i + j) as u8)) {
+                    if self[Color::WHITE].has_square((8 * i + j) as u8) {
                         write!(f, "{}", piece.to_char().to_uppercase().next().unwrap())?;
                     } else {
                         write!(f, "{}", piece.to_char())?;

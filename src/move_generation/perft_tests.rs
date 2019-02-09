@@ -20,7 +20,7 @@ fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
         if depth == start_depth {
             println!(
                 "{}: {}",
-                if board.side_to_move == Color::WHITE {
+                if board.side_to_move == Color::BLACK {
                     Move::from(mov)
                 } else {
                     Move::from(mov).transpose()
@@ -44,11 +44,18 @@ fn perft(board: &mut Board, depth: u8) -> usize {
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
+    board.play_move("e2e3");
+    board.play_move("c7c6");
+    board.play_move("d1h5");
+
     let init_key = board.zobrist_hasher.zobrist_key;
 
-    assert_eq!(perft(&mut board, 6), 119_060_324);
+    //assert_eq!(perft(&mut board, 6), 119_060_324);
     //assert_eq!(perft(&mut board, 5), 4_865_609);
     //assert_eq!(perft(&mut board, 4), 197_281);
+    //assert_eq!(perft(&mut board, 3), 13134);
+    //assert_eq!(perft(&mut board, 2), 626);
+    assert_eq!(perft(&mut board, 1), 18);
     //assert_eq!(perft(&mut board, 3), 8902);
     //assert_eq!(perft(&mut board, 2), 400);
     //assert_eq!(perft(&mut board, 1), 20);

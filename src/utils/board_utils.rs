@@ -1,10 +1,10 @@
 #![allow(clippy::unreadable_literal)]
 
-use std::cmp::{max, min, Ordering};
+use std::cmp::{max, min};
 use std::convert::From;
 use std::fmt;
 use std::iter::FusedIterator;
-use std::ops::{Div, Index, IndexMut, Rem, Sub};
+use std::ops::{Deref, Index, IndexMut};
 
 #[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
@@ -28,8 +28,8 @@ pub enum Piece {
 }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub struct Square(pub u8);
+pub type Square = u8;
+pub struct SqWrapper(pub Square);
 
 pub type BitBoard = u64;
 pub struct BBWraper(pub BitBoard);
@@ -112,16 +112,16 @@ pub const FILES: [BitBoard; 8] = [
     FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
 ];
 
-pub const A1_SQUARE: Square = Square::from_char_file_rank('a', '1');
-pub const B1_SQUARE: Square = Square::from_char_file_rank('b', '1');
-pub const C1_SQUARE: Square = Square::from_char_file_rank('c', '1');
-pub const D1_SQUARE: Square = Square::from_char_file_rank('d', '1');
-pub const E1_SQUARE: Square = Square::from_char_file_rank('e', '1');
-pub const F1_SQUARE: Square = Square::from_char_file_rank('f', '1');
-pub const G1_SQUARE: Square = Square::from_char_file_rank('g', '1');
-pub const H1_SQUARE: Square = Square::from_char_file_rank('h', '1');
-pub const A8_SQUARE: Square = Square::from_char_file_rank('a', '8');
-pub const H8_SQUARE: Square = Square::from_char_file_rank('h', '8');
+pub const A1_SQUARE: Square = SqWrapper::from_char_file_rank('a', '1');
+pub const B1_SQUARE: Square = SqWrapper::from_char_file_rank('b', '1');
+pub const C1_SQUARE: Square = SqWrapper::from_char_file_rank('c', '1');
+pub const D1_SQUARE: Square = SqWrapper::from_char_file_rank('d', '1');
+pub const E1_SQUARE: Square = SqWrapper::from_char_file_rank('e', '1');
+pub const F1_SQUARE: Square = SqWrapper::from_char_file_rank('f', '1');
+pub const G1_SQUARE: Square = SqWrapper::from_char_file_rank('g', '1');
+pub const H1_SQUARE: Square = SqWrapper::from_char_file_rank('h', '1');
+pub const A8_SQUARE: Square = SqWrapper::from_char_file_rank('a', '8');
+pub const H8_SQUARE: Square = SqWrapper::from_char_file_rank('h', '8');
 
 // [Black masks, White masks]
 pub const KING_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard> =
@@ -143,142 +143,124 @@ pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> =
 pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> =
     BlackWhiteAttribute::new(E1_SQUARE, D1_SQUARE);
 
-impl Square {
-    pub const fn new(square: u8) -> Self {
-        Square(square)
-    }
-
+impl SqWrapper {
     // Creates a square from file and rank between 0 and 7
-    pub const fn from_file_rank(file: u8, rank: u8) -> Self {
-        Square(8 * rank + (7 - file))
+    pub const fn from_file_rank(file: u8, rank: u8) -> Square {
+        8 * rank + (7 - file)
     }
-
-    // Returns the square behind (1 row below)
-    pub const fn behind(self) -> Self {
-        Square(self.0 - 8)
-    }
-
-    pub const fn forward(self) -> Self {
-        Square(self.0 + 8)
-    }
-
-    pub const fn forward_left(self) -> Self {
-        Square(self.0 + 9)
-    }
-
-    pub const fn forward_right(self) -> Self {
-        Square(self.0 + 7)
-    }
-
-    pub const fn behind_left(self) -> Self {
-        Square(self.0 - 7)
-    }
-
-    pub const fn behind_right(self) -> Self {
-        Square(self.0 - 9)
-    }
-
     // Creates a square from file and rank between 0 and 7
-    pub const fn from_char_file_rank(file: char, rank: char) -> Self {
+    pub const fn from_char_file_rank(file: char, rank: char) -> Square {
         Self::from_file_rank(file as u8 - b'a', rank as u8 - b'1')
     }
 
+    fn distance(from: Square, to: Square) -> u8 {
+        max(from, to) - min(from, to)
+    }
+}
+
+impl Deref for SqWrapper {
+    type Target = Square;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl Deref for BBWraper {
+    type Target = BitBoard;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub trait SquareExt {
+    fn behind(self) -> Square;
+    fn forward(self) -> Square;
+    fn forward_left(self) -> Square;
+    fn forward_right(self) -> Square;
+    fn behind_left(self) -> Square;
+    fn behind_right(self) -> Square;
+    fn rank(self) -> u8;
+    fn file(self) -> u8;
+    fn rank_file(self) -> (u8, u8);
+}
+
+impl SquareExt for Square {
+    // Returns the square behind (1 row below)
+    fn behind(self) -> Self {
+        self - 8
+    }
+
+    fn forward(self) -> Self {
+        self + 8
+    }
+
+    fn forward_left(self) -> Self {
+        self + 9
+    }
+
+    fn forward_right(self) -> Self {
+        self + 7
+    }
+
+    fn behind_left(self) -> Self {
+        self - 7
+    }
+
+    fn behind_right(self) -> Self {
+        self - 9
+    }
+
     // Returns the rank between 0 and 7
-    pub const fn rank(self) -> u8 {
-        self.0 / 8
+    fn rank(self) -> u8 {
+        self / 8
     }
 
     // Returns the file between 0 and 7
-    pub const fn file(self) -> u8 {
-        7 - self.0 % 8
+    fn file(self) -> u8 {
+        7 - self % 8
     }
 
-    pub const fn rank_file(self) -> (u8, u8) {
+    fn rank_file(self) -> (u8, u8) {
         (self.rank(), self.file())
     }
-
-    pub const fn as_bitboard(self) -> BitBoard {
-        1 << self.0
-    }
-
-    pub const fn as_index(self) -> usize {
-        self.0 as usize
-    }
 }
 
-// Returns a bitboard between the two given squares included
-/*
-pub fn square_mask_included_with(from: Square, to: Square) -> BitBoard {
-    let raw_distance = from - to;
-    let offset_unit = masking_offset(from, to);
-    let length = raw_distance / offset_unit + 1;
-
-    let base = ((1 << (offset_unit*length)) - 1) / ((1 << offset_unit) - 1);
-    BitBoard::new(base << std::cmp::min(from, to).0)
+impl From<Square> for BBWraper {
+    fn from(square: Square) -> BBWraper {
+        BBWraper(1u64 << square)
+    }
 }
-*/
 
 // Returns a bitboard between the two given squares excluded
 pub fn square_mask_between(from: Square, to: Square) -> BitBoard {
-    let raw_distance = from - to;
-    let offset_unit = masking_offset(from, to);
+    let raw_distance = SqWrapper::distance(from, to);
+    let offset_unit = masking_offset(from, to, raw_distance);
     let length = raw_distance / offset_unit - 1;
 
     let base = ((1 << (offset_unit * length)) - 1) / ((1 << offset_unit) - 1);
-    base << (std::cmp::min(from, to).0 + offset_unit)
+    base << (std::cmp::min(from, to) + offset_unit)
 }
+
 // Offsets for masking between two squares
 // TODO specialized masking for rook and bishop
-fn masking_offset(from_square: Square, target_square: Square) -> u8 {
+fn masking_offset(from_square: Square, target_square: Square, raw_distance: u8) -> u8 {
     if target_square % 8 == from_square % 8 {
         // Vertical
         8
     } else if target_square / 8 == from_square / 8 {
         // Horizontal
         1
-    } else if (target_square - from_square) % 9 == 0 {
+    } else if raw_distance % 9 == 0 {
         // Antidiagonal
         9
     } else {
+        debug_assert!(raw_distance % 7 == 0);
         // Diagonal
         7
     }
 }
 
-// Sub returns the distance between two squares as a u8
-impl Sub for Square {
-    type Output = u8;
-    fn sub(self, other: Square) -> Self::Output {
-        max(self.0, other.0) - min(self.0, other.0)
-    }
-}
-
-impl Ord for Square {
-    fn cmp(&self, other: &Square) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl PartialOrd for Square {
-    fn partial_cmp(&self, other: &Square) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-// TODO maybe change this to row and file
-impl Rem<u8> for Square {
-    type Output = Square;
-    fn rem(self, rhs: u8) -> Self::Output {
-        Square(self.0 % rhs)
-    }
-}
-
-impl Div<u8> for Square {
-    type Output = Square;
-    fn div(self, rhs: u8) -> Self::Output {
-        Square(self.0 / rhs)
-    }
-}
 // Transpose trait is for objects that can be transposed into the other player pov.
 // Actually the trait is never used as a trait but just for readability
 pub trait Transpose {
@@ -287,7 +269,7 @@ pub trait Transpose {
 
 impl Transpose for Square {
     fn transpose(&self) -> Self {
-        Square(63 - self.0)
+        63 - self
     }
 }
 
@@ -300,23 +282,11 @@ impl Transpose for Color {
     }
 }
 
-impl fmt::Debug for Square {
+impl fmt::Display for SqWrapper {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Square({}{:?} {:?})",
-            char::from(b'a' + (7 - (self.0 % 8))),
-            self.0 / 8 + 1,
-            self.0
-        )
-    }
-}
-
-impl fmt::Display for Square {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{:?}",
+            "{}{}",
             char::from(b'a' + (7 - (self.0 % 8))),
             self.0 / 8 + 1
         )
@@ -333,9 +303,9 @@ impl BBWraper {
     }
 }
 
-impl From<BitBoard> for Square {
-    fn from(bitboard: BitBoard) -> Square {
-        Square(bitboard.trailing_zeros() as u8)
+impl From<BitBoard> for SqWrapper {
+    fn from(bitboard: BitBoard) -> SqWrapper {
+        SqWrapper(bitboard.trailing_zeros() as u8)
     }
 }
 
@@ -354,24 +324,24 @@ impl BitBoardExt for BitBoard {
     fn pop_lsb_as_square(&mut self) -> Square {
         let singly_populated_bitboard = *self & self.overflowing_neg().0;
         *self ^= singly_populated_bitboard;
-        Square::from(singly_populated_bitboard)
+        *SqWrapper::from(singly_populated_bitboard)
     }
 
     fn has_square(self, square: Square) -> bool {
-        self & square.as_bitboard() != 0
+        self & *BBWraper::from(square) != 0
     }
     fn has_squares(self, squares: BitBoard) -> bool {
         self & squares != 0
     }
 
     fn remove_square(self, square: Square) -> Self {
-        self.remove_squares(square.as_bitboard())
+        self.remove_squares(*BBWraper::from(square))
     }
     fn remove_squares(self, squares: Self) -> Self {
         self & !squares
     }
     fn add_square(self, square: Square) -> Self {
-        self | square.as_bitboard()
+        self | *BBWraper::from(square)
     }
 
     fn population(self) -> u32 {

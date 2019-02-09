@@ -90,7 +90,7 @@ fn coord_from_square(square: u8) -> (u8, u8) {
 }
 
 fn square_from_coord(coord: (u8, u8)) -> Square {
-    Square(8 * coord.0 + coord.1)
+    8 * coord.0 + coord.1
 }
 
 // Goes through a line given a bitboard of blockers and a closure to get the next move
@@ -107,7 +107,7 @@ fn direction_blockers_mask<F, G>(
     while check_bounds(kl) {
         kl = update(kl);
         let square_bitboard = square_from_coord(kl);
-        *result |= square_bitboard.as_bitboard();
+        *result |= *BBWraper::from(square_bitboard);
         if blockers.has_square(square_bitboard) {
             break;
         }
@@ -289,7 +289,7 @@ pub fn rook_attack(square: u8, blockers: BitBoard) -> BitBoard {
 pub fn index_to_key(index: usize, bits: u32, mut mask: BitBoard) -> BitBoard {
     let mut result = BBWraper::empty();
     for i in 0..bits {
-        let j = mask.pop_lsb_as_square().0;
+        let j = mask.pop_lsb_as_square();
         if index & (1 << i) != 0 {
             result |= 1u64 << j;
         }

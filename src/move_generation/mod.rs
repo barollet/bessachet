@@ -87,21 +87,21 @@ fn sliding_attack(
 }
 
 pub fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &ROOK_ATTACK_TABLE[usize::from(square.0)];
+    let magic_entry = &ROOK_ATTACK_TABLE[usize::from(square)];
     sliding_attack(magic_entry, occupancy, rook_offset)
 }
 
 pub fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &BISHOP_ATTACK_TABLE[usize::from(square.0)];
+    let magic_entry = &BISHOP_ATTACK_TABLE[usize::from(square)];
     sliding_attack(magic_entry, occupancy, bishop_offset)
 }
 
 fn knight_attack(square: Square) -> BitBoard {
-    KNIGHT_ATTACK_TABLE[square.as_index()]
+    KNIGHT_ATTACK_TABLE[square as usize]
 }
 
 fn king_attack(square: Square) -> BitBoard {
-    KING_ATTACK_TABLE[square.as_index()]
+    KING_ATTACK_TABLE[square as usize]
 }
 
 // Returns the xray attack of the given square for pinned pieces
@@ -117,12 +117,12 @@ fn xray_attack(
 }
 
 fn rook_xray_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &ROOK_ATTACK_TABLE[usize::from(square.0)];
+    let magic_entry = &ROOK_ATTACK_TABLE[usize::from(square)];
     xray_attack(magic_entry, occupancy, rook_offset)
 }
 
 fn bishop_xray_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &BISHOP_ATTACK_TABLE[usize::from(square.0)];
+    let magic_entry = &BISHOP_ATTACK_TABLE[usize::from(square)];
     xray_attack(magic_entry, occupancy, bishop_offset)
 }
 
@@ -212,7 +212,7 @@ impl LegalMoveGenerator {
             // If this is not a double check we can capture the checking piece or block a slider
             if self.number_of_checkers == 1 {
                 let checking_square = self.checkers[0];
-                let white_king_square = Square::from(board[Color::WHITE] & board[Piece::KING]);
+                let white_king_square = *SqWrapper::from(board[Color::WHITE] & board[Piece::KING]);
                 // Capture the checking piece
                 self.capture_checker(board, checking_square);
                 // Block the attack if it is a sliding one
@@ -386,7 +386,7 @@ impl LegalMoveGenerator {
         // get the pinned piece
         let pinned_square = pin_mask & board[Color::WHITE];
         if pinned_square != BBWraper::empty() {
-            let pinned_square = Square::from(pinned_square);
+            let pinned_square = *SqWrapper::from(pinned_square);
             // updates the pin datastructure
             self.pinned_pieces[self.number_of_pinned_pieces] =
                 (pinned_square, pin_mask.add_square(pinner_square));
@@ -560,14 +560,12 @@ impl LegalMoveGenerator {
         if !(ROW_1 | ROW_2).has_square(captured_square) {
             let mut pawn_simple_captures = BBWraper::empty();
             if !FILE_A.has_square(captured_square) {
-                pawn_simple_captures |= captured_square.behind_left().as_bitboard()
-                    & board[Color::WHITE]
-                    & board[Piece::PAWN]
+                let origin_square = *BBWraper::from(captured_square.behind_left());
+                pawn_simple_captures |= origin_square & board[Color::WHITE] & board[Piece::PAWN]
             }
             if !FILE_H.has_square(captured_square) {
-                pawn_simple_captures |= captured_square.behind_right().as_bitboard()
-                    & board[Color::WHITE]
-                    & board[Piece::PAWN]
+                let origin_square = *BBWraper::from(captured_square.behind_right());
+                pawn_simple_captures |= origin_square & board[Color::WHITE] & board[Piece::PAWN]
             }
             if !ROW_8.has_square(captured_square) {
                 can_capture |= pawn_simple_captures;
@@ -860,7 +858,7 @@ impl LegalMoveGenerator {
             attack_map |= rook_attack(queen_square, board.occupied_squares());
         }
         // King
-        attack_map |= king_attack(Square::from(board[Piece::KING] & board[Color::WHITE]));
+        attack_map |= king_attack(*SqWrapper::from(board[Piece::KING] & board[Color::WHITE]));
 
         attack_map
     }
@@ -931,8 +929,8 @@ impl Board {
         let origin_row = chars[1];
         let dest_file = chars[2];
         let dest_row = chars[3];
-        let mut origin_square = Square::from_char_file_rank(origin_file, origin_row);
-        let mut dest_square = Square::from_char_file_rank(dest_file, dest_row);
+        let mut origin_square = SqWrapper::from_char_file_rank(origin_file, origin_row);
+        let mut dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
         if self.side_to_move == Color::BLACK {
             origin_square = origin_square.transpose();
             dest_square = dest_square.transpose();
@@ -993,15 +991,15 @@ fn generate_knight_attacks() -> [BitBoard; 64] {
     ];
 
     for (attack_bitboard, sq) in knight_attacks.iter_mut().zip(0u8..) {
-        let (rank, file) = Square(sq).rank_file();
+        let (rank, file) = sq.rank_file();
         let (rank, file) = (rank as i8, file as i8);
 
         for (i, j) in &knight_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard |=
-                    Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
-                *attack_bitboard |=
-                    Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
+                *attack_bitboard |= *BBWraper::from(SqWrapper::from_file_rank(
+                    (file + i) as u8,
+                    (rank + j) as u8,
+                ));
             }
         }
     }
@@ -1024,13 +1022,15 @@ fn generate_king_attacks() -> [BitBoard; 64] {
     ];
 
     for (attack_bitboard, sq) in king_attacks.iter_mut().zip(0u8..) {
-        let (rank, file) = Square(sq).rank_file();
+        let (rank, file) = sq.rank_file();
         let (rank, file) = (rank as i8, file as i8);
 
         for (i, j) in &king_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard |=
-                    Square::from_file_rank((file + i) as u8, (rank + j) as u8).as_bitboard();
+                *attack_bitboard |= *BBWraper::from(SqWrapper::from_file_rank(
+                    (file + i) as u8,
+                    (rank + j) as u8,
+                ));
             }
         }
     }

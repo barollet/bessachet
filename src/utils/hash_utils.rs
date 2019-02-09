@@ -63,7 +63,7 @@ fn generate_zobrist_consts() -> [usize; ZOBRIST_ARRAY_SIZE] {
 
 // Gets the zobrist constant for the given piece and color on the given square
 fn zobrist_const_index(square: Square, piece: Piece, color: Color) -> usize {
-    square.0 as usize * (6 * color as usize + piece as usize)
+    square as usize * (6 * color as usize + piece as usize)
 }
 
 #[derive(Copy, Clone)]
@@ -81,8 +81,7 @@ impl ZobristHasher {
         let mut zobrist_pawn_key = 0;
         // For all squares we set the given piece
         // We use White POV
-        for i in 0..64 {
-            let square = Square::new(i);
+        for square in 0..64 {
             // If there is a piece on the given square
             if let Some(piece) = position[square] {
                 // We look at its color and we update the key

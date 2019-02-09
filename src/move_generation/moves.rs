@@ -44,7 +44,7 @@ pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::n
     Move::raw_new(E1_SQUARE, C1_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
 );
 
-pub const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
+pub const NULL_MOVE: Move = Move::raw_new(0, 0);
 
 const CASTLING_RIGHTS_BITS_OFFSET: u8 = 16;
 const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 20;
@@ -57,7 +57,7 @@ const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
 impl Move {
     // Creates a simple move with no side effect
     pub fn quiet_move(from: Square, to: Square) -> Self {
-        Move(u16::from(from.0) + (u16::from(to.0) << 6))
+        Move(u16::from(from) + (u16::from(to) << 6))
     }
 
     pub fn double_pawn_push_to(to: Square) -> Self {
@@ -75,7 +75,7 @@ impl Move {
     // This is supposed to be called only for constant compilation and not an runtime
     #[allow(clippy::cast_lossless)]
     const fn raw_new(from: Square, to: Square) -> Self {
-        Move(from.0 as u16 + ((to.0 as u16) << 6))
+        Move(from as u16 + ((to as u16) << 6))
     }
 
     // Helper to set some flags to the move
@@ -98,11 +98,11 @@ impl Move {
 
     // Public interface for the board
     pub fn origin_square(self) -> Square {
-        Square::new((self.0 & 0x3f) as u8)
+        (self.0 & 0x3f) as u8
     }
 
     pub fn destination_square(self) -> Square {
-        Square::new((self.0 >> 6) as u8 & 0x3f)
+        (self.0 >> 6) as u8 & 0x3f
     }
 
     pub fn get_promotion_piece(self) -> Option<Piece> {
@@ -186,7 +186,7 @@ impl ExtendedMove {
         let square = ((self.0 >> EN_PASSANT_SQUARE_BITS_OFFSET)
             & (u64::max_value() >> (64 - EN_PASSANT_SQUARE_BITS_SIZE))) as u8;
         if square != 0 {
-            Some(Square::new(square))
+            Some(square)
         } else {
             None
         }
@@ -205,7 +205,7 @@ impl Transpose for Move {
         let dest_square = self.destination_square().transpose();
         let mut transposed_move = Move(self.0);
         transposed_move.0 &= !0xfff; // Clearing the old squares
-        transposed_move.0 |= u16::from(origin_square.0) + (u16::from(dest_square.0) << 6);
+        transposed_move.0 |= u16::from(origin_square) + (u16::from(dest_square) << 6);
 
         transposed_move
     }
@@ -216,8 +216,8 @@ impl fmt::Display for Move {
         write!(
             f,
             "{}{}{}",
-            self.origin_square(),
-            self.destination_square(),
+            SqWrapper(self.origin_square()),
+            SqWrapper(self.destination_square()),
             match self.get_promotion_piece() {
                 Some(Piece::KNIGHT) => "n",
                 Some(Piece::BISHOP) => "b",
