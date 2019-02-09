@@ -1,6 +1,5 @@
 use enum_primitive::FromPrimitive;
 use move_generation::moves::Move;
-use move_generation::moves::NULL_MOVE;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const TTDEFAULT_SIZE: usize = 67_108_864; // The default size is 64MB of hash for the transposition table

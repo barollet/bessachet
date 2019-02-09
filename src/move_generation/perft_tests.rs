@@ -14,7 +14,7 @@ fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
         return generator.number_of_legal_moves();
     }
     generator.fold(0, |acc, mov| {
-        board.make(mov);
+        let ext_mov = board.make(mov);
 
         let partial_sum = internal_perft(board, depth - 1, start_depth);
         if depth == start_depth {
@@ -29,7 +29,7 @@ fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
             );
         }
 
-        board.unmake(mov);
+        board.unmake(ext_mov);
         acc + partial_sum
     })
 }

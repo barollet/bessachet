@@ -1,7 +1,6 @@
 #![allow(clippy::unreadable_literal)]
 
 use board::HalfBoard;
-use move_generation::{ExtendedMove, Move};
 use utils::*;
 
 // A Xoroshiro Pseudo random generator
@@ -185,13 +184,17 @@ impl ZobristHasher {
         }
     }
 
-    pub fn update_en_passant(&mut self, ext_mov: ExtendedMove) {
+    pub fn update_en_passant(
+        &mut self,
+        old_en_passant_square: Option<Square>,
+        new_en_passant_square: Option<Square>,
+    ) {
         // Reset the old en passant file
-        if let Some(old_en_passant_square) = ext_mov.get_en_passant_target() {
-            self.zobrist_key ^= ZOBRIST_CONSTS
-                [ZOBRIST_EN_PASSANT_BASE_OFFSET + old_en_passant_square.file() as usize];
+        if let Some(square) = old_en_passant_square {
+            self.zobrist_key ^=
+                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
         }
-        if let Some(square) = Move::from(ext_mov).get_en_passant_target_square() {
+        if let Some(square) = new_en_passant_square {
             // Set the new en passant file
             self.zobrist_key ^=
                 ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];

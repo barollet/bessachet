@@ -245,10 +245,13 @@ impl Board {
 
     // For make and unmake procedure, we assume that the provided move is valid
     // If not the program can panic! or remain in an unconsistent state
-    pub fn make(&mut self, ext_mov: ExtendedMove) {
+    pub fn make(&mut self, mov: Move) -> ExtendedMove {
         let side_to_move = self.side_to_move;
-        let mov = Move::from(ext_mov);
         let moved_piece = self[side_to_move][mov.origin_square()].unwrap();
+
+        let old_caslting_rights = self.castling_rights;
+        let old_en_passant_square = self[Color::WHITE].en_passant;
+        let old_halfmove_clock = self.halfmove_clock;
 
         self.halfmove_clock = if moved_piece == Piece::PAWN {
             0
@@ -330,7 +333,9 @@ impl Board {
         self[side_to_move.transpose()].en_passant = mov
             .get_en_passant_target_square()
             .map(|square| square.transpose());
-        self.zobrist_hasher.update_en_passant(ext_mov);
+        let new_en_passant_square = self[Color::WHITE].en_passant;
+        self.zobrist_hasher
+            .update_en_passant(old_en_passant_square, new_en_passant_square);
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
@@ -370,11 +375,17 @@ impl Board {
         }
         let new_castling_rights = self.castling_rights;
         self.zobrist_hasher
-            .update_castling_rights(ext_mov.get_castling_rights(), new_castling_rights);
+            .update_castling_rights(old_caslting_rights, new_castling_rights);
 
         // Update the side to move
         self.zobrist_hasher.update_side_to_move();
         self.side_to_move = self.side_to_move.transpose();
+
+        mov.decorate(
+            old_caslting_rights,
+            old_en_passant_square.map_or(0, |square| square.0),
+            old_halfmove_clock,
+        )
     }
 
     // Unmake the given move, if the move was played by White, the board must be in Black side to
@@ -464,11 +475,15 @@ impl Board {
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
         // En passant square is given from the side that played pov
         let side_to_move = self.side_to_move;
+        let en_passant_square_to_remove = self[Color::WHITE].en_passant;
+
         self[side_that_played].en_passant = ext_mov.get_en_passant_target();
         self[side_to_move].en_passant = self[side_that_played]
             .en_passant
             .map(|square| square.transpose());
-        self.zobrist_hasher.update_en_passant(ext_mov);
+        let new_en_passant_square = self[Color::WHITE].en_passant;
+        self.zobrist_hasher
+            .update_en_passant(en_passant_square_to_remove, new_en_passant_square);
 
         let old_caslting_rights = self.castling_rights;
         let restored_castling_rights = ext_mov.get_castling_rights();
@@ -552,16 +567,8 @@ impl Board {
         LegalMoveGenerator::new(
             &self.halfboards[side_to_move],
             side_to_move,
-            self.create_decorator(),
-        )
-    }
-
-    pub fn create_decorator(&self) -> Decorator {
-        let side_to_move = self.side_to_move;
-        Decorator::new(
-            self.halfboards[side_to_move].en_passant,
             self.castling_rights,
-            self.halfmove_clock,
+            self[side_to_move].en_passant,
         )
     }
 }

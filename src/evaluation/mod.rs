@@ -1,4 +1,4 @@
-pub mod material_evaluation;
+mod material_evaluation;
 mod pawn_structure;
 
 pub use self::material_evaluation::MaterialEvaluator;

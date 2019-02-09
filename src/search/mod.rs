@@ -1,7 +1,7 @@
 use board::Board;
 use evaluation::*;
 use hash_tables::*;
-use move_generation::{ExtendedMove, Move, NULL_EXTMOVE};
+use move_generation::{Move, NULL_MOVE};
 use std::f32;
 
 /* Basic sequential alpha beta implementation */
@@ -18,9 +18,9 @@ impl Board {
 
         macro_rules! quiescence_proc {
             ($mov: ident) => {
-                self.make($mov);
+                let umove = self.make($mov);
                 let score = -self.quiesce(-beta, -alpha);
-                self.unmake($mov);
+                self.unmake(umove);
 
                 if score >= beta {
                     return beta;
@@ -60,15 +60,15 @@ impl Board {
         }
 
         // TODO merge alpha and max score?
-        let mut best_mov = NULL_EXTMOVE;
+        let mut best_mov = NULL_MOVE;
         let mut max_score = f32::NEG_INFINITY;
         let mut node_type = NodeType::AllNode;
 
         let move_generator = self.create_legal_move_generator();
         for mov in move_generator {
-            self.make(mov);
+            let umove = self.make(mov);
             let score = -self.alpha_beta(-beta, -alpha, depth_left - 1);
-            self.unmake(mov);
+            self.unmake(umove);
 
             if score > max_score {
                 max_score = score;
@@ -95,10 +95,10 @@ impl Board {
         // Write result in TT
         // Alpha move or PV move
         // No moves means mate
-        if best_mov == NULL_EXTMOVE {
+        if best_mov == NULL_MOVE {
             TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
                 key,
-                Move::from(NULL_EXTMOVE),
+                NULL_MOVE,
                 u8::max_value(),
                 MATE_SCORE,
                 NodeType::CutNode,
@@ -108,11 +108,7 @@ impl Board {
         } else {
             // Otherwise we insert the PV node from here
             TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
-                key,
-                Move::from(best_mov),
-                depth_left,
-                max_score,
-                node_type,
+                key, best_mov, depth_left, max_score, node_type,
             ));
 
             alpha

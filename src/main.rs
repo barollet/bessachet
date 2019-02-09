@@ -16,6 +16,8 @@ use hash_tables::*;
 use utils::*;
 
 fn main() {
+    let _board = Board::initial_position();
+
     let mut board =
         Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
             .unwrap();
@@ -30,8 +32,7 @@ fn main() {
                 tt_entry.best_move.transpose()
             }
         );
-        let decorator = board.create_decorator();
-        board.make(decorator.decorate_move(tt_entry.best_move));
+        board.make(tt_entry.best_move);
         println!(
             "value: {}",
             board.material_evaluator.evaluation(Color::WHITE)

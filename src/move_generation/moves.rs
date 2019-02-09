@@ -45,7 +45,6 @@ pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::n
 );
 
 pub const NULL_MOVE: Move = Move::raw_new(Square::new(0), Square::new(0));
-pub const NULL_EXTMOVE: ExtendedMove = ExtendedMove(0);
 
 const CASTLING_RIGHTS_BITS_OFFSET: u8 = 16;
 const HALFMOVE_CLOCK_BITS_OFFSET: u8 = 20;
@@ -153,6 +152,13 @@ impl Move {
     // Not triggered by en passant capture
     pub fn is_capture(self) -> bool {
         self.has_flags(CAPTURE_FLAG) & !self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG)
+    }
+
+    pub fn decorate(self, castling_rights: u8, en_passant: u8, halfmove_clock: u8) -> ExtendedMove {
+        ExtendedMove::from(self)
+            .set_castling_rights(castling_rights)
+            .set_en_passant_target(en_passant)
+            .set_halfmove_clock(halfmove_clock)
     }
 }
 
