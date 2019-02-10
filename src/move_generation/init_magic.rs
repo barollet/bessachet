@@ -4,6 +4,27 @@ use move_generation::{MagicEntry, SlidingAttackTable, SLIDING_ATTACK_TABLE};
 use utils::*;
 
 // Note: see the magic factors at the end of this file
+//
+const SLIDING_ATTACK_TABLE_SIZE: usize = 88507; // 651KB
+
+pub fn init_sliding_attack_tables() -> SlidingAttackTable {
+    let mut attack_table: SlidingAttackTable = Vec::with_capacity(SLIDING_ATTACK_TABLE_SIZE);
+    for _i in 0..SLIDING_ATTACK_TABLE_SIZE {
+        attack_table.push(BBWraper::empty());
+    }
+    for square in 0u8..64 {
+        fill_attack_table(&mut attack_table, square);
+    }
+    attack_table
+}
+
+pub fn init_magic_entries(magic_entry_init: fn(u8) -> MagicEntry) -> [MagicEntry; 64] {
+    let mut attack_table: [MagicEntry; 64] = unsafe { std::mem::uninitialized() };
+    for (magic_entry, square) in attack_table.iter_mut().zip(0u8..) {
+        *magic_entry = magic_entry_init(square);
+    }
+    attack_table
+}
 
 // Magic factors initialization
 impl MagicEntry {

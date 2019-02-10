@@ -29,6 +29,7 @@ pub enum Piece {
 }
 
 pub type Square = u8;
+pub type NonZeroSquare = std::num::NonZeroU8; // Used for en passant square
 pub struct SqWrapper(pub Square);
 
 pub type BitBoard = u64;
@@ -111,6 +112,8 @@ pub const FILE_H: BitBoard = file(7);
 pub const FILES: [BitBoard; 8] = [
     FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
 ];
+
+pub const SQUARES: BitBoard = BBWraper::full();
 
 pub const A1_SQUARE: Square = SqWrapper::from_char_file_rank('a', '1');
 pub const B1_SQUARE: Square = SqWrapper::from_char_file_rank('b', '1');

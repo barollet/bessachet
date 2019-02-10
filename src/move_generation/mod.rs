@@ -3,7 +3,7 @@ pub mod moves;
 
 use std::ptr;
 
-use self::init_magic::{bishop_offset, fill_attack_table, rook_offset};
+use self::init_magic::*;
 
 use board::{Board, HalfBoard, KING_CASTLING_RIGHTS_MASKS, QUEEN_CASTLING_RIGHTS_MASKS};
 
@@ -35,8 +35,8 @@ pub struct MagicEntry {
     postmask: BitBoard,
 }
 
-const SLIDING_ATTACK_TABLE_SIZE: usize = 88507; // 651KB
-type SlidingAttackTable = Vec<BitBoard>;
+type SlidingAttackTable = Vec<BitBoard>; // Heap allocated table
+type AttackTable = [BitBoard; 64];
 
 // NOTE: lazy statics uses an atomic check for each access, maybe at some point we will need to
 // remove this and come back to classical static mut or something else to make it faster
@@ -47,27 +47,9 @@ lazy_static! {
     // TODO better magic table with none naive arrangement and better magic factors to reduce size
     pub static ref SLIDING_ATTACK_TABLE: SlidingAttackTable = init_sliding_attack_tables();
 
-    static ref KNIGHT_ATTACK_TABLE: [BitBoard; 64] = generate_knight_attacks(); // 512 bytes
-    static ref KING_ATTACK_TABLE: [BitBoard; 64] = generate_king_attacks(); // 512 bytes
-}
-
-fn init_sliding_attack_tables() -> SlidingAttackTable {
-    let mut attack_table: SlidingAttackTable = Vec::with_capacity(SLIDING_ATTACK_TABLE_SIZE);
-    for _i in 0..SLIDING_ATTACK_TABLE_SIZE {
-        attack_table.push(BBWraper::empty());
-    }
-    for square in 0u8..64 {
-        fill_attack_table(&mut attack_table, square);
-    }
-    attack_table
-}
-
-fn init_magic_entries(magic_entry_init: fn(u8) -> MagicEntry) -> [MagicEntry; 64] {
-    let mut attack_table: [MagicEntry; 64] = unsafe { std::mem::uninitialized() };
-    for (magic_entry, square) in attack_table.iter_mut().zip(0u8..) {
-        *magic_entry = magic_entry_init(square);
-    }
-    attack_table
+    static ref KNIGHT_ATTACK_TABLE: AttackTable = generate_knight_attacks(); // 512 bytes
+    static ref KING_ATTACK_TABLE: AttackTable = generate_king_attacks(); // 512 bytes
+    static ref PAWN_ATTACK_TABLE: BlackWhiteAttribute<AttackTable> = generate_pawn_attacks(); // 2*512 bytes
 }
 
 // returns the bitboards of the pawns that can take the pawn in index (starting from LSB)
@@ -976,7 +958,20 @@ const fn en_passant_table() -> [BitBoard; 8] {
     ]
 }
 
-fn generate_knight_attacks() -> [BitBoard; 64] {
+fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
+    let white_pawn_attacks = [BBWraper::empty(); 64]; // First and last row while remain empty
+
+    for square in BBWraper(SQUARES & !ROW_1 & !ROW_8) {
+        white_pawn_attacks[square as usize].add_square(square.forward_left());
+        white_pawn_attacks[square as usize].add_square(square.forward_right());
+    }
+
+    let black_pawn_attacks = array_init::array_init(|i| white_pawn_attacks[i] << 16);
+
+    BlackWhiteAttribute::new(white_pawn_attacks, black_pawn_attacks)
+}
+
+fn generate_knight_attacks() -> AttackTable {
     let mut knight_attacks = [BBWraper::empty(); 64];
 
     let knight_moves = [
@@ -1007,7 +1002,7 @@ fn generate_knight_attacks() -> [BitBoard; 64] {
     knight_attacks
 }
 
-fn generate_king_attacks() -> [BitBoard; 64] {
+fn generate_king_attacks() -> AttackTable {
     let mut king_attacks = [BBWraper::empty(); 64];
 
     let king_moves = [

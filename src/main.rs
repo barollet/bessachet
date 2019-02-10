@@ -2,6 +2,7 @@
 extern crate enum_primitive;
 #[macro_use]
 extern crate lazy_static;
+extern crate array_init;
 
 mod board;
 mod evaluation;

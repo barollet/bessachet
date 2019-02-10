@@ -116,6 +116,8 @@ impl Board {
     }
 
     pub fn search(&mut self, depth: u8) {
-        self.alpha_beta(f32::NEG_INFINITY, f32::INFINITY, depth);
+        for dep in 1..depth + 1 {
+            self.alpha_beta(f32::NEG_INFINITY, f32::INFINITY, dep);
+        }
     }
 }

@@ -34,13 +34,44 @@ pub struct Board {
 
     // Capture stack for making and unmaking
     capture_stack: [Piece; 32], // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
-    capture_stack_index: usize,
+    capture_stack_size: usize,
 
     // The pseudo-legal move generator takes into account pinned piece so legality checks can be
     // performed for king moves and ep capture only
     //move_generator: PseudoLegalMoveGenerator,
     pub zobrist_hasher: ZobristHasher,
     pub material_evaluator: MaterialEvaluator,
+}
+
+#[derive(Clone)]
+pub struct Board2 {
+    // Defining a unique position (Information used in hashing)
+    pub pieces: [BitBoard; 6],
+    pub occupancy: BlackWhiteAttribute<BitBoard>, // black pieces first
+
+    pub en_passant: Option<NonZeroSquare>,
+    // We only use the 4 LSBs 0000 qkQK (same order starting from the LSB than FEN notation when white plays)
+    pub castling_rights: u8,
+
+    pub side_to_move: Color,
+
+    // Some redundancy with the piece bitboards to allow fast access to the content of a single
+    // square
+    pub board_88: [Option<Piece>; 64],
+
+    // Auxiliary structs for hashing, generating moves and evaluating material
+    // TODO movegen
+    pub zobrist_hasher: ZobristHasher,
+    pub material_evaluator: MaterialEvaluator,
+
+    // Internal capture stack for making and unmaking moves
+    // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
+    capture_stack: [Piece; 32],
+    capture_stack_size: usize,
+
+    // Misc
+    halfmove_clock: u8,
+    ply: u8,
 }
 
 // The board keeps two redundant representation so the move generation is white to move only
@@ -227,7 +258,7 @@ impl Board {
             side_to_move,
 
             capture_stack: [Piece::PAWN; 32], // Initialized with pawns by default even if it should be empty
-            capture_stack_index: 0,
+            capture_stack_size: 0,
 
             zobrist_hasher: ZobristHasher::new(position, side_to_move, castling_rights),
 
@@ -498,13 +529,13 @@ impl Board {
     }
 
     fn push_captured(&mut self, piece: Piece) {
-        self.capture_stack[self.capture_stack_index] = piece;
-        self.capture_stack_index += 1;
+        self.capture_stack[self.capture_stack_size] = piece;
+        self.capture_stack_size += 1;
     }
 
     fn pop_captured(&mut self) -> Piece {
-        self.capture_stack_index -= 1;
-        self.capture_stack[self.capture_stack_index]
+        self.capture_stack_size -= 1;
+        self.capture_stack[self.capture_stack_size]
     }
 
     // Creates a piece of the given color on the given player's board (on black board, black has
