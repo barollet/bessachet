@@ -98,7 +98,8 @@ pub const fn file(number: u32) -> BitBoard {
 // Some constants declaration
 pub const ROW_1: BitBoard = 0xff;
 pub const ROW_2: BitBoard = 0xff00;
-pub const ROW_7: BitBoard = 0x00ff000000000000;
+pub const ROW_5: BitBoard = 0xff00000000;
+pub const ROW_7: BitBoard = 0xff000000000000;
 pub const ROW_8: BitBoard = 0xff00000000000000;
 
 pub const FILE_A: BitBoard = file(0);
@@ -119,32 +120,14 @@ pub const A1_SQUARE: Square = SqWrapper::from_char_file_rank('a', '1');
 pub const B1_SQUARE: Square = SqWrapper::from_char_file_rank('b', '1');
 pub const C1_SQUARE: Square = SqWrapper::from_char_file_rank('c', '1');
 pub const D1_SQUARE: Square = SqWrapper::from_char_file_rank('d', '1');
+pub const D8_SQUARE: Square = SqWrapper::from_char_file_rank('d', '8');
 pub const E1_SQUARE: Square = SqWrapper::from_char_file_rank('e', '1');
 pub const F1_SQUARE: Square = SqWrapper::from_char_file_rank('f', '1');
+pub const F8_SQUARE: Square = SqWrapper::from_char_file_rank('f', '8');
 pub const G1_SQUARE: Square = SqWrapper::from_char_file_rank('g', '1');
 pub const H1_SQUARE: Square = SqWrapper::from_char_file_rank('h', '1');
 pub const A8_SQUARE: Square = SqWrapper::from_char_file_rank('a', '8');
 pub const H8_SQUARE: Square = SqWrapper::from_char_file_rank('h', '8');
-
-// [Black masks, White masks]
-pub const KING_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard> =
-    BlackWhiteAttribute::new(0x0000000000000060, 0x0000000000000006);
-pub const KING_CASTLE_CHECK: BlackWhiteAttribute<BitBoard> =
-    BlackWhiteAttribute::new(0x0000000000000070, 0x000000000000000e);
-pub const QUEEN_CASTLE_EMPTY: BlackWhiteAttribute<BitBoard> =
-    BlackWhiteAttribute::new(0x000000000000000e, 0x0000000000000070);
-pub const QUEEN_CASTLE_CHECK: BlackWhiteAttribute<BitBoard> =
-    BlackWhiteAttribute::new(0x000000000000001c, 0x0000000000000038);
-
-// [Black square, White square]
-pub const KING_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> =
-    BlackWhiteAttribute::new(A1_SQUARE, H1_SQUARE); // H8 transpose for black
-pub const KING_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> =
-    BlackWhiteAttribute::new(C1_SQUARE, F1_SQUARE);
-pub const QUEEN_CASTLE_ROOK_ORIGIN_SQUARES: BlackWhiteAttribute<Square> =
-    BlackWhiteAttribute::new(H1_SQUARE, A1_SQUARE);
-pub const QUEEN_CASTLE_ROOK_DEST_SQUARES: BlackWhiteAttribute<Square> =
-    BlackWhiteAttribute::new(E1_SQUARE, D1_SQUARE);
 
 impl SqWrapper {
     // Creates a square from file and rank between 0 and 7
@@ -183,6 +166,8 @@ pub trait SquareExt {
     fn forward_right(self) -> Square;
     fn behind_left(self) -> Square;
     fn behind_right(self) -> Square;
+    fn left(self) -> Square;
+    fn right(self) -> Square;
     fn rank(self) -> u8;
     fn file(self) -> u8;
     fn rank_file(self) -> (u8, u8);
@@ -212,6 +197,14 @@ impl SquareExt for Square {
 
     fn behind_right(self) -> Self {
         self - 9
+    }
+
+    fn left(self) -> Self {
+        self + 1
+    }
+
+    fn right(self) -> Self {
+        self - 1
     }
 
     // Returns the rank between 0 and 7
@@ -315,7 +308,7 @@ impl From<BitBoard> for SqWrapper {
 pub trait BitBoardExt {
     fn pop_lsb_as_square(&mut self) -> Square;
     fn has_square(self, square: Square) -> bool;
-    fn has_squares(self, squares: BitBoard) -> bool;
+    fn intersects(self, squares: BitBoard) -> bool;
     fn remove_square(self, square: Square) -> BitBoard;
     fn remove_squares(self, squares: BitBoard) -> BitBoard;
     fn add_square(self, square: Square) -> BitBoard;
@@ -333,7 +326,7 @@ impl BitBoardExt for BitBoard {
     fn has_square(self, square: Square) -> bool {
         self & *BBWraper::from(square) != 0
     }
-    fn has_squares(self, squares: BitBoard) -> bool {
+    fn intersects(self, squares: BitBoard) -> bool {
         self & squares != 0
     }
 

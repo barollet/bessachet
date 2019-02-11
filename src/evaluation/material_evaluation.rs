@@ -1,4 +1,4 @@
-use board::HalfBoard;
+use board::prelude::*;
 use std::ops::{Index, IndexMut};
 use utils::*;
 
@@ -53,7 +53,7 @@ const INDEX_OFFSETS: PieceColorOffsets = PieceColorOffsets([
 // TODO add insufficient material for draws
 fn pre_compute_material_table() -> [i8; MATERIAL_TABLE_SIZE] {
     let mut material_table = [0; MATERIAL_TABLE_SIZE];
-    let mut material_evaluator = MaterialEvaluator::new(&HalfBoard::empty_board());
+    let mut material_evaluator = MaterialEvaluator::initialize(&Position::empty_board());
 
     macro_rules! for_piece {
         ($piece:expr, $max_number:expr, $body:expr) => {
@@ -147,15 +147,9 @@ impl IndexMut<PieceColorPair> for MaterialEvaluator {
     }
 }
 
-impl HalfBoard {
-    // Returns the number of pieces of the given color on this HalfBoard
-    fn get_number_of(&self, piece: Piece, color: Color) -> i16 {
-        (self[piece] & self[color]).count_ones() as i16
-    }
-}
-
-impl MaterialEvaluator {
-    pub fn new(position: &HalfBoard) -> Self {
+impl<'a> AuxiliaryStruct<'a> for MaterialEvaluator {
+    type Source = &'a Position;
+    fn initialize(position: Self::Source) -> Self {
         let n_white_rook = position.get_number_of(Piece::ROOK, Color::WHITE) as isize;
         let n_black_rook = position.get_number_of(Piece::ROOK, Color::BLACK) as isize;
         let n_white_bishop = position.get_number_of(Piece::BISHOP, Color::WHITE) as isize;
@@ -209,7 +203,10 @@ impl MaterialEvaluator {
                 && n_black_queen <= 1, // NOTE: There can't be more than 8 pawns per side
         }
     }
+}
 
+// TODO check that we are in a valid material constellation
+impl MaterialEvaluator {
     // We update the material index on capture or promotion
     pub fn capture_piece(&mut self, captured_piece: Piece, color: Color) {
         self.populations[(captured_piece, color)] -= 1;
@@ -219,29 +216,6 @@ impl MaterialEvaluator {
     pub fn uncapture_piece(&mut self, captured_piece: Piece, color: Color) {
         self.populations[(captured_piece, color)] += 1;
         self.table_index += INDEX_OFFSETS[(captured_piece, color)];
-    }
-
-    pub fn promote_piece(&mut self, promoted_piece: Piece, color: Color) {
-        self.uncapture_piece(promoted_piece, color);
-        self.capture_piece(Piece::PAWN, color);
-        match promoted_piece {
-            Piece::QUEEN => {
-                if self.populations[(Piece::QUEEN, color)] > 1 {
-                    self.valid_index = false;
-                }
-            }
-            _ => {
-                if self.populations[(promoted_piece, color)] > 2 {
-                    self.valid_index = false;
-                }
-            }
-        }
-    }
-
-    // TODO come back to a valid index (along with capturing)
-    pub fn unpromote_piece(&mut self, promoted_piece: Piece, color: Color) {
-        self.capture_piece(promoted_piece, color);
-        self.uncapture_piece(Piece::PAWN, color);
     }
 
     pub fn evaluation(&self, side_to_move: Color) -> f32 {

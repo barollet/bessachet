@@ -1,6 +1,6 @@
 #![allow(clippy::unreadable_literal)]
 
-use board::HalfBoard;
+use board::prelude::*;
 use utils::*;
 
 // A Xoroshiro Pseudo random generator
@@ -72,10 +72,10 @@ pub struct ZobristHasher {
     pub zobrist_pawn_key: usize,
 }
 
-impl ZobristHasher {
-    // Initialize the zobrist keys for the given position (from White POV)
+impl<'a> AuxiliaryStruct<'a> for ZobristHasher {
+    type Source = (&'a Position, &'a MailBox88);
     // The zobrist pawn key is updated only by pawns position (maybe change this in the future)
-    pub fn new(position: &HalfBoard, side_to_move: Color, castling_rights: u8) -> Self {
+    fn initialize((position, mailbox): (&Position, &MailBox88)) -> Self {
         // We reset the zobrist key
         let mut zobrist_key = 0;
         let mut zobrist_pawn_key = 0;
@@ -83,7 +83,7 @@ impl ZobristHasher {
         // We use White POV
         for square in 0..64 {
             // If there is a piece on the given square
-            if let Some(piece) = position[square] {
+            if let Some(piece) = mailbox[square as usize] {
                 // We look at its color and we update the key
                 let color = if position[Color::WHITE].has_square(square) {
                     Color::WHITE
@@ -99,14 +99,16 @@ impl ZobristHasher {
         }
 
         // Side to move
-        if side_to_move == Color::BLACK {
+        if position.side_to_move == Color::BLACK {
             zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_SIDE_TO_MOVE];
         }
         // Castling rights
-        zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_CASTLING_BASE_OFFSET + castling_rights as usize];
+        zobrist_key ^=
+            ZOBRIST_CONSTS[ZOBRIST_CASTLING_BASE_OFFSET + position.castling_rights as usize];
         // En passant file
         if let Some(square) = position.en_passant {
-            zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+            zobrist_key ^=
+                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.get().file() as usize];
         }
 
         ZobristHasher {
@@ -114,89 +116,33 @@ impl ZobristHasher {
             zobrist_pawn_key,
         }
     }
+}
 
-    // Updating helpers
-    fn swap(&mut self, square: Square, piece: Piece, color: Color) {
-        self.zobrist_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, piece, color)];
-    }
-    fn swap_pawn(&mut self, square: Square, color: Color) {
-        self.zobrist_pawn_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, Piece::PAWN, color)];
-    }
-
+impl ZobristHasher {
     // Updating logic
     // Update the capture of a piece
-    pub fn update_capture(&mut self, square: Square, piece: Piece, color: Color, pov: Color) {
-        // Depending on the player color POV we may have to transpose the square and color
-        match pov {
-            Color::WHITE => {
-                self.swap(square, piece, color);
-            }
-            Color::BLACK => {
-                self.swap(square.transpose(), piece, color.transpose());
-            }
-        }
+    pub fn update_capture(&mut self, square: Square, piece: Piece, color: Color) {
+        self.zobrist_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, piece, color)];
     }
 
-    // Move a piece in the zobrist key, captures are done in the update_capture function
-    pub fn update_move(
-        &mut self,
-        from: Square,
-        to: Square,
-        piece: Piece,
-        color: Color,
-        pov: Color,
-    ) {
-        // Depending on the player color POV we may have to transpose the square and color
-        match pov {
-            Color::WHITE => {
-                self.swap(from, piece, color);
-                self.swap(to, piece, color);
-            }
-            Color::BLACK => {
-                self.swap(from.transpose(), piece, color.transpose());
-                self.swap(to.transpose(), piece, color.transpose());
-            }
-        }
-    }
-
-    pub fn update_pawn_capture(&mut self, square: Square, color: Color, pov: Color) {
-        match pov {
-            Color::WHITE => {
-                self.swap_pawn(square, color);
-            }
-            Color::BLACK => {
-                self.swap_pawn(square.transpose(), color.transpose());
-            }
-        }
-    }
-
-    pub fn update_pawn_move(&mut self, from: Square, to: Square, color: Color, pov: Color) {
-        match pov {
-            Color::WHITE => {
-                self.swap_pawn(from, color);
-                self.swap_pawn(to, color);
-            }
-            Color::BLACK => {
-                self.swap_pawn(from.transpose(), color.transpose());
-                self.swap_pawn(to.transpose(), color.transpose());
-            }
-        }
+    pub fn update_pawn_capture(&mut self, square: Square, color: Color) {
+        self.zobrist_pawn_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, Piece::PAWN, color)];
     }
 
     pub fn update_en_passant(
         &mut self,
-        old_en_passant_square: Option<Square>,
-        new_en_passant_square: Option<Square>,
+        old_en_passant_square: Option<NonZeroSquare>,
+        new_en_passant_square: Option<NonZeroSquare>,
     ) {
         // Reset the old en passant file
         if let Some(square) = old_en_passant_square {
             self.zobrist_key ^=
-                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.get().file() as usize];
         }
         if let Some(square) = new_en_passant_square {
             // Set the new en passant file
             self.zobrist_key ^=
-                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.file() as usize];
+                ZOBRIST_CONSTS[ZOBRIST_EN_PASSANT_BASE_OFFSET + square.get().file() as usize];
         }
     }
 

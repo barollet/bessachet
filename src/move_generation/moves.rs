@@ -7,6 +7,8 @@ use utils::*;
 
 use enum_primitive::FromPrimitive;
 
+use board::prelude::*;
+
 // An ExtendedMove is a 64 bits word following more or the less the extended
 // representation in https://www.chessprogramming.org/Encoding_Moves
 // MSB -------------------------------------------------------- LSB
@@ -88,7 +90,7 @@ impl Move {
         self.0 & flags != 0
     }
 
-    fn has_exact_flags(self, flags: u16) -> bool {
+    pub fn has_exact_flags(self, flags: u16) -> bool {
         self.0 & FLAGS_RANGE == flags
     }
 
@@ -115,27 +117,28 @@ impl Move {
     }
 
     // if the move is a double pawn push, returns the associated en passant target square
-    pub fn get_en_passant_target_square(self) -> Option<Square> {
+    pub fn get_en_passant_target_square(self) -> Option<NonZeroSquare> {
         if self.has_exact_flags(DOUBLE_PUSH_FLAG) {
-            Some(self.destination_square())
+            NonZeroSquare::new(self.destination_square())
         } else {
             None
         }
     }
 
     // If this is a castling move, returns the from and to squares of the associated tower
-    pub fn get_castling_rook(self, side_to_move: Color) -> Option<(Square, Square)> {
+    pub fn get_castling_rook(self, color: Color) -> Option<(Square, Square)> {
         if self.has_exact_flags(KING_CASTLE_FLAG) {
             Some((
-                KING_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move],
-                KING_CASTLE_ROOK_DEST_SQUARES[side_to_move],
+                rook_square(CastlingSide::KING, RookSquare::ORIGIN, color),
+                rook_square(CastlingSide::KING, RookSquare::DEST, color),
             ))
         } else if self.has_exact_flags(QUEEN_CASTLE_FLAG) {
             Some((
-                QUEEN_CASTLE_ROOK_ORIGIN_SQUARES[side_to_move],
-                QUEEN_CASTLE_ROOK_DEST_SQUARES[side_to_move],
+                rook_square(CastlingSide::QUEEN, RookSquare::ORIGIN, color),
+                rook_square(CastlingSide::QUEEN, RookSquare::DEST, color),
             ))
         } else {
+            // TODO hint this branch to the compiler
             None
         }
     }
@@ -182,14 +185,10 @@ impl ExtendedMove {
         ((self.0 >> HALFMOVE_CLOCK_BITS_OFFSET)
             & (u64::max_value() >> (64 - HALFMOVE_CLOCK_BITS_SIZE))) as u8
     }
-    pub fn get_en_passant_target(self) -> Option<Square> {
+    pub fn get_en_passant_target(self) -> Option<NonZeroSquare> {
         let square = ((self.0 >> EN_PASSANT_SQUARE_BITS_OFFSET)
             & (u64::max_value() >> (64 - EN_PASSANT_SQUARE_BITS_SIZE))) as u8;
-        if square != 0 {
-            Some(square)
-        } else {
-            None
-        }
+        NonZeroSquare::new(square)
     }
 }
 

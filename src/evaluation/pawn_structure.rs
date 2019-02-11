@@ -28,7 +28,7 @@ const BACKWARD_MASK: [(BitBoard, BitBoard); 8] = [
 impl Board {
     pub fn pawn_structure_evaluation(&self) -> f32 {
         let key = self.zobrist_hasher.zobrist_pawn_key;
-        let side_multiplier = self.side_to_move.side_multiplier();
+        let side_multiplier = self.position.side_to_move.side_multiplier();
         if let Some(pawn_entry) = unsafe { PAWN_TABLE.probe(key) } {
             // Table hit
             side_multiplier * pawn_entry.evaluation as f32
@@ -47,19 +47,20 @@ impl Board {
     }
 
     fn doubled_pawns_score(&self) -> f32 {
-        let board = &self[Color::WHITE];
+        let position = self.position;
         -0.5 * FILES.iter().fold(0.0, |acc, file| {
-            acc + (board[Piece::PAWN] & board[Color::WHITE] & *file).population() as f32 - 1.0
+            acc + (position[Piece::PAWN] & position[Color::WHITE] & *file).population() as f32 - 1.0
         }) + 0.5
             * FILES.iter().fold(0.0, |acc, file| {
-                acc + (board[Piece::PAWN] & board[Color::BLACK] & *file).population() as f32 - 1.0
+                acc + (position[Piece::PAWN] & position[Color::BLACK] & *file).population() as f32
+                    - 1.0
             })
     }
 
     fn isolated_pawns_score(&self) -> f32 {
-        let board = &self[Color::WHITE];
+        let position = self.position;
         -0.5 * ISOLATION_MASK.iter().fold(0, |acc, (mask, file)| {
-            acc + if (board[Piece::PAWN] & board[Color::WHITE] & *mask).population() == 0 {
+            acc + if (position[Piece::PAWN] & position[Color::WHITE] & *mask).population() == 0 {
                 file.population()
             } else {
                 0
@@ -67,7 +68,9 @@ impl Board {
         }) as f32
             + 0.5
                 * ISOLATION_MASK.iter().fold(0, |acc, (mask, file)| {
-                    acc + if (board[Piece::PAWN] & board[Color::BLACK] & *mask).population() == 0 {
+                    acc + if (position[Piece::PAWN] & position[Color::BLACK] & *mask).population()
+                        == 0
+                    {
                         file.population()
                     } else {
                         0
