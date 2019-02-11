@@ -28,8 +28,9 @@ pub const CAPTURE_FLAG: u16 = 1 << 14;
 pub const PROMOTION_FLAG: u16 = 1 << 15;
 
 const FLAGS_RANGE: u16 = SPECIAL0_FLAG | SPECIAL1_FLAG | CAPTURE_FLAG | PROMOTION_FLAG;
+pub const NO_FLAG: u16 = 0;
 
-const DOUBLE_PUSH_FLAG: u16 = SPECIAL0_FLAG;
+pub const DOUBLE_PUSH_FLAG: u16 = SPECIAL0_FLAG;
 pub const EN_PASSANT_CAPTURE_FLAG: u16 = CAPTURE_FLAG | DOUBLE_PUSH_FLAG;
 
 const KING_CASTLE_FLAG: u16 = SPECIAL1_FLAG;
@@ -58,20 +59,13 @@ const EN_PASSANT_SQUARE_BITS_SIZE: u8 = 6;
 
 impl Move {
     // Creates a simple move with no side effect
-    pub fn quiet_move(from: Square, to: Square) -> Self {
+    pub fn new(from: Square, to: Square) -> Self {
         Move(u16::from(from) + (u16::from(to) << 6))
     }
 
-    pub fn double_pawn_push_to(to: Square) -> Self {
-        Self::tactical_move(to.behind().behind(), to, DOUBLE_PUSH_FLAG)
-    }
-    pub fn double_pawn_push(from: Square, to: Square) -> Self {
-        Self::tactical_move(from, to, DOUBLE_PUSH_FLAG)
-    }
-
     // Creates a move with all the specified flags
-    pub fn tactical_move(from: Square, to: Square, flags: u16) -> Self {
-        Self::quiet_move(from, to).set_flags(flags)
+    pub fn new_with_flags(from: Square, to: Square, flags: u16) -> Self {
+        Self::new(from, to).set_flags(flags)
     }
 
     // This is supposed to be called only for constant compilation and not an runtime
@@ -94,8 +88,9 @@ impl Move {
         self.0 & FLAGS_RANGE == flags
     }
 
+    // Also sets the promotion flag
     pub fn set_promoted_piece(self, piece: Piece) -> Self {
-        Move(self.0 | (piece as u16 & 0b11) << 12)
+        Move(self.0 | (piece as u16 & 0b11) << 12).set_flags(PROMOTION_FLAG)
     }
 
     // Public interface for the board
@@ -144,12 +139,8 @@ impl Move {
     }
 
     // If this is an en passant capture, returns the captured pawn square
-    pub fn get_en_passant_capture_square(self) -> Option<Square> {
-        if self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) {
-            Some(self.destination_square().behind())
-        } else {
-            None
-        }
+    pub fn is_en_passant_capture(self) -> bool {
+        self.has_exact_flags(EN_PASSANT_CAPTURE_FLAG)
     }
 
     // Not triggered by en passant capture

@@ -97,7 +97,7 @@ impl Position {
         !self.occupied_squares()
     }
     pub fn king_square(&self, color: Color) -> Square {
-        *SqWrapper::from(self[color] & self[Piece::KING])
+        Square::from(BBWraper(self[color] & self[Piece::KING]))
     }
     // Returns a bitboard of pawn candidates to capture en passant
     pub fn en_passant_candidates(&self) -> BitBoard {
@@ -114,7 +114,7 @@ impl Board {
     // Piece manipulation
     // TODO check that we dont promote too much queens
     fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
-        let set_mask = *BBWraper::from(square);
+        let set_mask = BitBoard::from(SqWrapper(square));
         self.position[piece] |= set_mask;
         self.position[color] |= set_mask;
         self[square] = Some(piece);
@@ -130,7 +130,7 @@ impl Board {
     }
 
     fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
-        let reset_mask = !*BBWraper::from(square);
+        let reset_mask = !BitBoard::from(SqWrapper(square));
         self.position[piece] &= reset_mask;
         self.position[color] &= reset_mask;
         self[square] = None;
@@ -220,24 +220,18 @@ impl Board {
             player_color,
         );
 
-        // En passant capture
-        if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            self.delete_piece(en_passant_captured_square, Piece::PAWN, opponent_color);
+        // En passant capture (before updating en passant target from double push)
+        if mov.is_en_passant_capture() {
+            let en_passant_square = position.en_passant.unwrap().get();
+            self.delete_piece(en_passant_square, Piece::PAWN, opponent_color);
 
             self.halfmove_clock = 0;
         }
 
         // Castling, move the other rook
         // Castling rights are removed when the king moves
-        if let Some((rook_from_square, rook_dest_square)) =
-            mov.get_castling_rook(position.side_to_move)
-        {
-            self.move_piece(
-                rook_from_square,
-                rook_dest_square,
-                Piece::ROOK,
-                player_color,
-            );
+        if let Some((rook_from, rook_dest)) = mov.get_castling_rook(position.side_to_move) {
+            self.move_piece(rook_from, rook_dest, Piece::ROOK, player_color);
         }
 
         // Double pawn push, set the en passant target
@@ -316,23 +310,10 @@ impl Board {
                 played_color_opponent,
             );
         }
-        // En passant capture
-        if let Some(en_passant_captured_square) = mov.get_en_passant_capture_square() {
-            self.create_piece(
-                en_passant_captured_square,
-                Piece::PAWN,
-                played_color_opponent,
-            );
-        }
 
         // Castling, move the other rook
-        if let Some((rook_from_square, rook_dest_square)) = mov.get_castling_rook(played_color) {
-            self.move_piece(
-                rook_dest_square,
-                rook_from_square,
-                Piece::ROOK,
-                played_color,
-            );
+        if let Some((rook_from, rook_dest)) = mov.get_castling_rook(played_color) {
+            self.move_piece(rook_dest, rook_from, Piece::ROOK, played_color);
         }
 
         // Promotion
@@ -350,6 +331,12 @@ impl Board {
         self.zobrist_hasher
             .update_en_passant(en_passant_square_to_remove, new_en_passant_square);
 
+        // We restore en passant capture after en passant restoration
+        if mov.is_en_passant_capture() {
+            let en_passant_square = new_en_passant_square.unwrap().get();
+            self.create_piece(en_passant_square, Piece::PAWN, played_color_opponent);
+        }
+
         // Castling rights restoration
         let old_caslting_rights = position.castling_rights;
         let restored_castling_rights = ext_mov.get_castling_rights();
@@ -365,19 +352,5 @@ impl Board {
         position.side_to_move = played_color;
 
         self.ply -= 1;
-    }
-}
-
-// Public interface
-impl Board {
-    // Creates a LegalMoveGenerator for the side to move
-    pub fn create_legal_move_generator(&self) -> LegalMoveGenerator {
-        let side_to_move = self.side_to_move;
-        LegalMoveGenerator::new(
-            &self.halfboards[side_to_move],
-            side_to_move,
-            self.castling_rights,
-            self[side_to_move].en_passant,
-        )
     }
 }

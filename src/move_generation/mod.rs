@@ -52,6 +52,14 @@ lazy_static! {
     pub static ref EN_PASSANT_TABLE: BlackWhiteAttribute<[BitBoard; 8]> = en_passant_table(); // 2*64 bytes 8*8 bitboards
 }
 
+const PAWN_PUSH_SHIFT: BlackWhiteAttribute<i8> = BlackWhiteAttribute::new(-8, 8);
+// Capture is given as (left, right) from white pov
+const PAWN_CAPTURE_SHIFT: BlackWhiteAttribute<(i8, i8)> =
+    BlackWhiteAttribute::new((-7, -9), (9, 7));
+// Used for double push destination
+const EN_PASSANT_LINE: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_5, ROW_4);
+const STARTING_ROW: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_7, ROW_2);
+
 fn sliding_attack(
     magic_entry: &MagicEntry,
     occupancy: BitBoard,
@@ -147,6 +155,25 @@ impl<'a> AuxiliaryStruct<'a> for MoveGenHelper {
     }
 }
 
+struct PinnedPiecesIterator<'a> {
+    move_gen: &'a MoveGenHelper,
+    iteration_index: usize,
+}
+
+// This iterates over the pinned pieces
+impl<'a> Iterator for PinnedPiecesIterator<'a> {
+    type Item = (Square, BitBoard);
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.iteration_index < self.move_gen.number_of_pinned_pieces {
+            let item = self.move_gen.pinned_pieces[self.iteration_index];
+            self.iteration_index += 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
+
 // Structure manipulation
 impl MoveGenHelper {
     // Push a new pinned piece with its liberties
@@ -173,7 +200,7 @@ impl MoveGenHelper {
         // get the pinned piece should be reduced to a single square or empty
         let pinned: BitBoard = pin_liberties & position[position.side_to_move];
         if pinned != BBWraper::empty() {
-            let pinned: Square = *SqWrapper::from(pinned);
+            let pinned = Square::from(BBWraper(pinned));
             self.push_pinned(pinned, pin_liberties.add_square(pinner));
         } else if pin_liberties & position.occupied_squares() == BBWraper::empty() {
             self.push_checker(pinner);
@@ -208,11 +235,21 @@ impl MoveGenHelper {
             self.push_checker(knight_square);
         }
     }
+
+    fn pinned_pieces_iterator(&self) -> PinnedPiecesIterator {
+        PinnedPiecesIterator {
+            move_gen: &self,
+            iteration_index: 0,
+        }
+    }
 }
 
 // A pseudo legal move list, illegal moves from absolutely pinned pieces are already removed
 // This does a legality check for en passant capture and king moves
-pub struct PseudoLegalMoveGenerator {
+pub struct PseudoLegalMoveGenerator<'a> {
+    // Board reference to implement functions in PseudoLegalMoveGenerator interface
+    board: &'a Board,
+
     // NOTE: The maximum size is 128 even if we can construct a position with 218 moves
     // maybe we have to change this to 218 or a dynamically sized struct
     moves_list: [Move; 128],
@@ -220,7 +257,7 @@ pub struct PseudoLegalMoveGenerator {
     number_of_moves: usize,
 }
 
-impl Iterator for PseudoLegalMoveGenerator {
+impl<'a> Iterator for PseudoLegalMoveGenerator<'a> {
     type Item = Move;
 
     fn next(&mut self) -> Option<Move> {
@@ -237,745 +274,350 @@ impl Iterator for PseudoLegalMoveGenerator {
 
 // A struct to hold the legality check and making moves
 pub struct LegalMoveMaker<'a> {
-    board: &'a Board,
-    pseudo_legal_mov_gen: PseudoLegalMoveGenerator,
+    pseudo_legal_mov_gen: PseudoLegalMoveGenerator<'a>,
 }
 
 impl<'a> Iterator for LegalMoveMaker<'a> {
     type Item = ExtendedMove;
 
     fn next(&mut self) -> Option<ExtendedMove> {
+        let board = self.pseudo_legal_mov_gen.board;
         // We try the next pseudo legal move if there is one
         self.pseudo_legal_mov_gen.next().map_or(None, |mov| {
             // If this is not a king move or an en passant capture we know the move is legal
-            let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
+            let is_king_mov = board[mov.origin_square()].unwrap() == Piece::KING;
             if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
-                Some(self.board.make(mov))
+                Some(board.make(mov))
             } else {
-                // If not we try to make the move
-                let (legal, ext_mov) = self.board.legality_check(mov);
-                if legal {
-                    // If it is legal we keep it
-                    Some(ext_mov)
-                } else {
-                    // If it is not legal we cancel it and we try the next pseudo legal move
-                    self.board.unmake(ext_mov);
-                    self.next()
-                }
+                // Otherwise we check the legality of the move
+                board.legality_check(mov).or_else(|| self.next())
             }
         })
     }
 }
 
+// Helpers
 impl Board {
-    fn legality_check(&mut self, mov: Move) -> (bool, ExtendedMove) {
-        // TODO
-        (true, self.make(mov))
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct LegalMoveGenerator {
-    // We don't use a permanent reference to a HalfBoard, we will borrow the HalfBoard each time we
-    // need it
-    color: Color,
-    castling_rights: u8,
-    en_passant_target: Option<Square>,
-    move_stack: [Move; 128], // Allocated on the program stack with a bounded size
-    // NOTE: The maximum size is 128 even if we can construct a position with 218 moves
-    // maybe we have to change this to 218 in the future
-
-    // Internals
-    // We hold the squares that are pinned and no more than 2 pieces can be pinned on the same
-    // direction, there is also the bitboard of the liberties of the pinned piece (to be
-    // intersected with the actual moves of the piece)
-    pinned_pieces: [(Square, BitBoard); 8],
-    number_of_pinned_pieces: usize, // pinners stack indexes (basically a usize for 0 1 2)
-    free_pieces: BitBoard,          // A global pin mask to quickly get if a piece is pinned or free
-    // checkers
-    checkers: [Square; 2],
-    number_of_checkers: usize,
-    // next move on the stack
-    number_of_legal_moves: usize,
-    // iterator index
-    next_iterator_move: usize,
-}
-
-impl LegalMoveGenerator {
-    // Initialize a new LegalMoveGenerator by computing pinned pieces
-    // It takes a reference to the current board and the color of the player we want to move
-    pub fn new(
-        halfboard: &HalfBoard,
-        color: Color,
-        castling_rights: u8,
-        en_passant_target: Option<Square>,
-    ) -> Self {
-        let mut generator = Self {
-            color,
-            castling_rights,
-            en_passant_target,
-            move_stack: [NULL_MOVE; 128], // Placeholders to initiatlize memory
-
-            pinned_pieces: [(A1_SQUARE, BBWraper::empty()); 8], // Placeholders
-            number_of_pinned_pieces: 0,
-            free_pieces: BBWraper::full(),
-
-            checkers: [A1_SQUARE; 2], // Placeholders
-            number_of_checkers: 0,
-
-            number_of_legal_moves: 0,
-            next_iterator_move: 0,
-        };
-
-        generator.initialize(halfboard);
-
-        generator
-    }
-
-    fn initialize(&mut self, board: &HalfBoard) {
-        // we compute pinned pieces and checkers and store the result for evaluation
-        self.compute_pinned_pieces(board);
-        self.compute_checkers(board);
-
-        // If there is no check we fetch the moves as usual
-        if self.number_of_checkers == 0 {
-            self.fetch_possible_moves(board);
+    // Make a move and check if it is legal, if not unmake the move and returns None
+    fn legality_check(&mut self, mov: Move) -> Option<ExtendedMove> {
+        // Make the move
+        let ext_mov = self.make(mov);
+        // Test legality
+        let player_color = self.position.side_to_move;
+        let king_square = self.position.king_square(player_color);
+        if self.is_in_check(king_square, player_color) {
+            // Is in check, not legal
+            self.unmake(ext_mov);
+            None
         } else {
-            // Otherwise we have to move the king
-            self.escape_king(board);
-            // If this is not a double check we can capture the checking piece or block a slider
-            if self.number_of_checkers == 1 {
-                let checking_square = self.checkers[0];
-                let white_king_square = *SqWrapper::from(board[Color::WHITE] & board[Piece::KING]);
-                // Capture the checking piece
-                self.capture_checker(board, checking_square);
-                // Block the attack if it is a sliding one
-                let checking_piece = board[self.checkers[0]].unwrap();
-                if checking_piece == Piece::BISHOP
-                    || checking_piece == Piece::ROOK
-                    || checking_piece == Piece::QUEEN
-                {
-                    self.block_slider(board, checking_square, white_king_square);
-                }
+            // Legal
+            Some(ext_mov)
+        }
+    }
+
+    // A piece of the given color on the given square would be in check
+    fn is_in_check(&self, square: Square, color: Color) -> bool {
+        // We use the super piece method
+        let opponent_color = color.transpose();
+        let opponent_pieces = self.position[opponent_color];
+
+        let occupancy = self.position.occupied_squares();
+
+        // The pawn attack is indeed empty if we cannot be checked by pawns
+        pawn_attack(square, color)
+            .intersects(opponent_pieces & self.position[Piece::PAWN])
+            || knight_attack(square).intersects(opponent_pieces & self.position[Piece::KNIGHT])
+            || bishop_attack(square, occupancy).intersects(
+                opponent_pieces & (self.position[Piece::BISHOP] | self.position[Piece::QUEEN]),
+            )
+            || rook_attack(square, occupancy).intersects(
+                opponent_pieces & (self.position[Piece::ROOK] | self.position[Piece::QUEEN]),
+            )
+            // This can be avoided for en passant capture
+            || king_attack(square).intersects(opponent_pieces & self.position[Piece::KING])
+    }
+}
+
+// Move generation functions
+impl Board {
+    fn generate_pseudo_legal_moves(&mut self) -> PseudoLegalMoveGenerator {
+        // We update the checks and pins on demand
+        self.move_gen = MoveGenHelper::initialize(&self.position);
+
+        let mut pseudo_legal_mov_gen = PseudoLegalMoveGenerator::new(&self);
+
+        // If not in check, we fetch the move as usual
+        if self.move_gen.number_of_checkers == 0 {
+            pseudo_legal_mov_gen.all_moves();
+        } else if self.move_gen.number_of_checkers == 1 {
+            // If in simple check we can block the slider, capture the checker or escape the king
+            pseudo_legal_mov_gen
+                .escape_king()
+                .capture_and_block_checker();
+        } else {
+            // If in double check we can only escape the king
+            debug_assert_eq!(self.move_gen.number_of_checkers, 2);
+            pseudo_legal_mov_gen.escape_king();
+        }
+
+        pseudo_legal_mov_gen
+    }
+
+    pub fn legal_move_maker(&self) -> LegalMoveMaker {
+        LegalMoveMaker {
+            pseudo_legal_mov_gen: self.generate_pseudo_legal_moves(),
+        }
+    }
+}
+
+impl<'a> PseudoLegalMoveGenerator<'a> {
+    fn new(board: &Board) -> PseudoLegalMoveGenerator {
+        PseudoLegalMoveGenerator {
+            board,
+
+            moves_list: [NULL_MOVE; 128],
+            iterator_move: 0,
+            number_of_moves: 0,
+        }
+    }
+
+    fn escape_king(&mut self) -> &PseudoLegalMoveGenerator {
+        let player_color = self.board.position.side_to_move;
+        let king_square = self.board.position.king_square(player_color);
+        self.push_attack(king_square, king_attack(king_square));
+
+        self
+    }
+
+    fn capture_and_block_checker(&mut self) -> &PseudoLegalMoveGenerator {
+        let checker_square = self.board.move_gen.checkers[0];
+        let checker_piece = self.board[checker_square].unwrap();
+
+        let mut target_mask: BitBoard = BitBoard::from(SqWrapper(checker_square));
+        // If the piece is a slider, try to block it, otherwise skip
+        if checker_piece == Piece::BISHOP
+            || checker_piece == Piece::ROOK
+            || checker_piece == Piece::QUEEN
+        {
+            let player_color = self.board.position.side_to_move;
+            let king_square = self.board.position.king_square(player_color);
+            target_mask |= square_mask_between(checker_square, king_square);
+        }
+
+        self.all_moves_with_target(target_mask)
+    }
+
+    fn all_moves(&mut self) -> &PseudoLegalMoveGenerator {
+        self.all_moves_with_target(BBWraper::full())
+    }
+
+    // Generate only moves that ends in the target mask
+    fn all_moves_with_target(&mut self, target_mask: BitBoard) -> &PseudoLegalMoveGenerator {
+        let player_color = self.board.position.side_to_move;
+        let player_pieces = self.board.position[player_color];
+        let opponent_pieces = self.board.position[player_color.transpose()];
+
+        let free_pieces = self.board.move_gen.free_pieces;
+        let empty_squares = self.board.position.empty_squares();
+
+        // Pawns
+        let pawns = self.board.position[Piece::PAWN] & player_pieces & free_pieces;
+        // Push
+        let push_shift = PAWN_PUSH_SHIFT[player_color];
+
+        let simple_pushed_pawns = (pawns << push_shift) & empty_squares & target_mask;
+        let origin_pawns = simple_pushed_pawns >> push_shift;
+        self.push_pawn_attack(origin_pawns, simple_pushed_pawns, NO_FLAG, player_color);
+
+        let (left_capture_shift, right_capture_shift) = PAWN_CAPTURE_SHIFT[player_color];
+
+        // Capture left
+        let captures_dest =
+            ((pawns & !FILE_A) << left_capture_shift) & opponent_pieces & target_mask;
+        let captures_origin = captures_dest >> left_capture_shift;
+        self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
+        // Capture right
+        let captures_dest =
+            ((pawns & !FILE_H) << right_capture_shift) & opponent_pieces & target_mask;
+        let captures_origin = captures_dest >> right_capture_shift;
+        self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
+        // Double push
+        let double_pushed = (simple_pushed_pawns << push_shift)
+            & empty_squares
+            & EN_PASSANT_LINE[player_color]
+            & target_mask;
+        let origin_pawns = double_pushed >> (2 * push_shift);
+        self.push_pawn_attack(origin_pawns, double_pushed, DOUBLE_PUSH_FLAG, player_color);
+        // En passant (we don't need the target mask as en passant capture will be checked
+        // afterward anyway)
+        for pawn in BBWraper(self.board.position.en_passant_candidates() & pawns) {
+            let en_passant_square = self.board.position.en_passant.unwrap();
+            let en_passant_dest = en_passant_square.get().forward(player_color);
+            if self.board[en_passant_dest].is_none() {
+                self.push_move(pawn, en_passant_dest, EN_PASSANT_CAPTURE_FLAG);
             }
         }
 
-        self.order_moves();
+        // Knights
+        let knights = player_pieces & self.board.position[Piece::KNIGHT] & free_pieces;
+        for knight in BBWraper(knights) {
+            self.push_attack(knight, knight_attack(knight) & target_mask);
+        }
+
+        let occupied_squares = self.board.position.occupied_squares();
+        macro_rules! sliding_attack {
+            ($piece: expr, $attack_function: ident) => {
+                let pieces = player_pieces
+                    & (self.board.position[$piece] | self.board.position[Piece::QUEEN])
+                    & self.board.move_gen.free_pieces;
+                for piece in BBWraper(pieces) {
+                    self.push_attack(
+                        piece,
+                        $attack_function(piece, occupied_squares) & target_mask,
+                    );
+                }
+            };
+        }
+        // Bishop-like
+        sliding_attack!(Piece::BISHOP, bishop_attack);
+
+        // Rook-like
+        sliding_attack!(Piece::ROOK, rook_attack);
+
+        // Pinned pieces
+        for (square, liberties) in self.board.move_gen.pinned_pieces_iterator() {
+            let occupied_squares = self.board.position.occupied_squares();
+            match self.board[square].unwrap() {
+                // pinned pawn can push, double push, capture, capture en passant but not promote
+                Piece::PAWN => {
+                    // Push
+                    let simple_push_dest = square.forward(player_color);
+                    if liberties.has_square(simple_push_dest)
+                        && self.board[simple_push_dest].is_none()
+                    {
+                        self.push_move(square, simple_push_dest, NO_FLAG);
+                    }
+                    // Double push
+                    if STARTING_ROW[player_color].has_square(square) {
+                        let double_push_dest = simple_push_dest.forward(player_color);
+                        if liberties.has_square(double_push_dest)
+                            && self.board[simple_push_dest].is_none()
+                            && self.board[double_push_dest].is_none()
+                        {
+                            self.push_move(square, double_push_dest, DOUBLE_PUSH_FLAG);
+                        }
+                    }
+                    // Capture
+                    for dest in BBWraper(pawn_attack(square, player_color) & liberties) {
+                        self.push_move(square, dest, CAPTURE_FLAG);
+                    }
+                    // En passant capture
+                    if let Some(en_passant_square) = self.board.position.en_passant {
+                        let en_passant_square = en_passant_square.get();
+                        let en_passant_dest = en_passant_square.forward(player_color);
+                        // legality will be checked anyway
+                        if self
+                            .board
+                            .position
+                            .en_passant_candidates()
+                            .has_square(square)
+                            && liberties.has_square(en_passant_dest)
+                        {
+                            self.push_move(square, en_passant_dest, EN_PASSANT_CAPTURE_FLAG);
+                        }
+                    }
+                }
+                Piece::KNIGHT => (), // Knights cannot move if pinned
+                Piece::BISHOP => self.push_attack(
+                    square,
+                    bishop_attack(square, occupied_squares) & target_mask & liberties,
+                ),
+                Piece::ROOK => self.push_attack(
+                    square,
+                    rook_attack(square, occupied_squares) & target_mask & liberties,
+                ),
+                Piece::QUEEN => self.push_attack(
+                    square,
+                    (bishop_attack(square, occupied_squares)
+                        | rook_attack(square, occupied_squares))
+                        & target_mask
+                        & liberties,
+                ),
+                Piece::KING => panic!("King shouldn't be pinned"),
+            }
+        }
+
+        // King
+        // We generate king moves and castling if we are not engaged in check
+        if target_mask == BBWraper::empty() {
+            self.castling();
+            self.escape_king()
+        } else {
+            self
+        }
+    }
+
+    fn castling(&mut self) -> &PseudoLegalMoveGenerator {
+        let player_color = self.board.position.side_to_move;
+        // King side
+        if self.can_castle(player_color, CastlingSide::KING) {}
+        // Queen side
+        if self.can_castle(player_color, CastlingSide::QUEEN) {}
+        self
+    }
+
+    // Castling, color is the player color
+    fn can_castle(&self, color: Color, side: CastlingSide) -> bool {
+        // right to castle on the given side
+        (self.board.position.castling_rights & rights_mask(side, Rights::ALLOWED, color) != 0)
+            // none of the squares on the way are occupied
+        && (self.board.position.occupied_squares() & squares_mask(side, Mask::EMPTY, color) == 0)
+        // squares crossed by the king are not in check
+        && (BBWraper(squares_mask(side, Mask::CHECK, color)).all(|square| !self.board.is_in_check(square, color)))
     }
 }
 
-// Structure manipulation
-impl LegalMoveGenerator {
+// Manipulation helpers
+impl<'a> PseudoLegalMoveGenerator<'a> {
+    fn push_move(&mut self, origin: Square, dest: Square, flags: u16) {
+        self.push_move_internal(Move::new_with_flags(origin, dest, flags));
+    }
     // Pushs the given move in the move stack
-    fn push_move(&mut self, pushed_move: Move) {
-        self.move_stack[self.number_of_legal_moves] = pushed_move;
-        self.number_of_legal_moves += 1;
+    fn push_move_internal(&mut self, mov: Move) {
+        self.moves_list[self.number_of_moves] = mov;
+        self.number_of_moves += 1;
     }
 
     // Helper to push all the possible promotions
     fn push_promotions_from_move(&mut self, promotion_move: Move) {
         for promoted_piece in &AVAILABLE_PROMOTION {
-            self.push_move(promotion_move.set_promoted_piece(*promoted_piece));
+            self.push_move_internal(promotion_move.set_promoted_piece(*promoted_piece));
         }
     }
 
     // Helper for pieces that can perform captures and quiet moves at the same time
-    // TODO remove this and change the fetching logic and add some basic ordering
-    fn push_attack(&mut self, board: &HalfBoard, origin_square: Square, attack: BitBoard) {
+    fn push_attack(&mut self, origin_square: Square, attack: BitBoard) {
+        let opponent_color = self.board.position.side_to_move.transpose();
+        let opponent_pieces = self.board.position[opponent_color];
         // Captures
-        for capture_square in BBWraper(attack & board[Color::BLACK]) {
-            self.push_move(Move::tactical_move(
-                origin_square,
-                capture_square,
-                CAPTURE_FLAG,
-            ));
+        for square in BBWraper(attack & opponent_pieces) {
+            self.push_move_internal(Move::new_with_flags(origin_square, square, CAPTURE_FLAG));
         }
         // Quiet moves
-        for dest_square in BBWraper(attack & board.empty_squares()) {
-            self.push_move(Move::quiet_move(origin_square, dest_square));
-        }
-    }
-}
-
-// Logic helpers
-impl LegalMoveGenerator {
-    // Castling
-    // the all iterator needs a mutable binding even if it doesn't modify
-    fn can_castle(
-        &self,
-        board: &HalfBoard,
-        caslting_rights: &BlackWhiteAttribute<u8>,
-        empty_squares: &BlackWhiteAttribute<BitBoard>,
-        check_squares: &mut BlackWhiteAttribute<BitBoard>,
-    ) -> bool {
-        (self.castling_rights & caslting_rights[self.color] != 0) // right to castle kingside
-        && (empty_squares[self.color] & board.occupied_squares() == 0) // none of the squares on the way are occupied
-        && (BBWraper(check_squares[self.color]).all(|square| !self.is_in_check(board, square))) // squares crossed by the king are in check
-    }
-    fn can_king_castle(&self, board: &HalfBoard) -> bool {
-        self.can_castle(
-            board,
-            &KING_CASTLING_RIGHTS_MASKS,
-            &KING_CASTLE_EMPTY,
-            &mut KING_CASTLE_CHECK,
-        )
-    }
-    fn can_queen_castle(&self, board: &HalfBoard) -> bool {
-        self.can_castle(
-            board,
-            &QUEEN_CASTLING_RIGHTS_MASKS,
-            &QUEEN_CASTLE_EMPTY,
-            &mut QUEEN_CASTLE_CHECK,
-        )
-    }
-
-    // Returns if the given square is checked but only by sliding pieces
-    // This faster (but not sufficiant) check is used for en passant capture
-    fn is_in_sliding_check(&self, board: &HalfBoard, occupancy: BitBoard, square: Square) -> bool {
-        rook_attack(square, occupancy)
-            & board[Color::BLACK]
-            & (board[Piece::ROOK] | board[Piece::QUEEN])
-            != BBWraper::empty()
-            || bishop_attack(square, occupancy)
-                & board[Color::BLACK]
-                & (board[Piece::BISHOP] | board[Piece::QUEEN])
-                != BBWraper::empty()
-    }
-
-    // Checks that the en passant capture will not discover the king
-    fn can_take_en_passant(&self, board: &HalfBoard, capturing_square: Square) -> bool {
-        let captured_square = self.en_passant_target.unwrap();
-        let after_en_passant_occupancy = board
-            .occupied_squares()
-            .remove_square(capturing_square)
-            .remove_square(captured_square)
-            .add_square(captured_square.forward());
-
-        !self.is_in_sliding_check(board, after_en_passant_occupancy, board.white_king_square())
-    }
-
-    // Uses a super piece (not to rely on the other side move generator)
-    // TODO use an attack map to go faster
-    fn is_in_check(&self, board: &HalfBoard, square: Square) -> bool {
-        // As we use a super piece for checks we can virtualy remove the king
-        let occupancy_without_king = board
-            .occupied_squares()
-            .remove_square(board.white_king_square());
-
-        // We can only be checked by pawns if we are below row 6 included
-        let checked_by_pawn = !(ROW_8 | ROW_7).has_square(square)
-            & (!FILE_A.has_square(square)
-                & (board[Color::BLACK] & board[Piece::PAWN]).has_square(square.forward_left())
-                || !FILE_H.has_square(square)
-                    & (board[Color::BLACK] & board[Piece::PAWN])
-                        .has_square(square.forward_right()));
-        // Sliding pieces
-        self.is_in_sliding_check(board, occupancy_without_king, square) ||
-        // Knight
-        knight_attack(square) & board[Color::BLACK] & board[Piece::KNIGHT] != BBWraper::empty() ||
-        // Pawn
-        checked_by_pawn ||
-        // King
-        king_attack(square) & board[Color::BLACK] & board[Piece::KING] != BBWraper::empty()
-    }
-
-    // Helpers for slider attacks
-    fn push_slider_attack(
-        &mut self,
-        board: &HalfBoard,
-        origin_square: Square,
-        piece_attack: fn(Square, BitBoard) -> BitBoard,
-    ) {
-        self.push_pinned_slider_attack(board, origin_square, BBWraper::full(), piece_attack);
-    }
-    fn push_pinned_slider_attack(
-        &mut self,
-        board: &HalfBoard,
-        origin_square: Square,
-        pin_liberties: BitBoard,
-        piece_attack: fn(Square, BitBoard) -> BitBoard,
-    ) {
-        let attack = piece_attack(origin_square, board.occupied_squares()) & pin_liberties;
-        self.push_attack(board, origin_square, attack);
-    }
-}
-
-// Actual move generation logic
-impl LegalMoveGenerator {
-    // Make the king move in a safe place
-    fn escape_king(&mut self, board: &HalfBoard) {
-        let king_square = board.white_king_square();
-        let mut attack = king_attack(king_square);
-        for dest_square in BBWraper(attack) {
-            if self.is_in_check(board, dest_square) {
-                attack = attack.remove_square(dest_square);
-            }
-        }
-        self.push_attack(board, king_square, attack);
-    }
-
-    // Fetchs all the blocking slider moves at once
-    fn block_slider(&mut self, board: &HalfBoard, checking_square: Square, target_square: Square) {
-        // Capture is excluded from the blocker mask, this is handled in the capturing piece
-        // routine
-        let blocker_mask = square_mask_between(checking_square, target_square);
-
-        // We check if any piece can go into the blocker mask
-        // Pawns -------------------------------------------
-        let pawns = board[Color::WHITE] & board[Piece::PAWN];
-        let simple_pawns = pawns & !ROW_8 & self.free_pieces;
-        // Simple push
-        for pushed_pawn in BBWraper((simple_pawns << 8) & blocker_mask) {
-            self.push_move(Move::quiet_move(pushed_pawn.behind(), pushed_pawn));
-        }
-        // Double push
-        let double_pushed_pawns = pawns & ROW_2 & self.free_pieces;
-        let double_pushed_pawns = (double_pushed_pawns << 8) & board.empty_squares();
-        // if it can block the checking sliders, then the destination square is empty
-        let double_pushed_pawns = double_pushed_pawns << 8 & blocker_mask;
-        for double_pushed_pawn in BBWraper(double_pushed_pawns) {
-            self.push_move(Move::double_pawn_push_to(double_pushed_pawn));
-        }
-        // En passant
-        for en_passant_capture in
-            BBWraper(pawns & board.en_passant_capture_start_squares() & self.free_pieces)
-        {
-            let dest_square = board.en_passant.unwrap().forward();
-            if blocker_mask.has_square(dest_square) {
-                self.push_move(Move::tactical_move(
-                    en_passant_capture,
-                    dest_square,
-                    EN_PASSANT_CAPTURE_FLAG,
-                ));
-            }
-        }
-        // Pawns can promote while blocking only on an horizontal check on the last row
-        if ROW_8.has_squares(blocker_mask) {
-            let promoting_pawns = blocker_mask >> 8 & pawns & self.free_pieces;
-            for pawn in BBWraper(promoting_pawns) {
-                self.push_promotions_from_move(Move::tactical_move(
-                    pawn,
-                    pawn.forward(),
-                    PROMOTION_FLAG,
-                ));
-            }
-        }
-
-        // Other pieces -------------------------------------
-        // Knight
-        for knight_square in BBWraper(board[Color::WHITE] & board[Piece::KNIGHT] & self.free_pieces)
-        {
-            let blocking_squares = knight_attack(knight_square) & blocker_mask;
-            for blocking_square in BBWraper(blocking_squares) {
-                self.push_move(Move::quiet_move(knight_square, blocking_square));
-            }
-        }
-        // Bishop or queen
-        for bishop_square in BBWraper(
-            board[Color::WHITE] & (board[Piece::BISHOP] | board[Piece::QUEEN]) & self.free_pieces,
-        ) {
-            let blocking_squares =
-                bishop_attack(bishop_square, board.occupied_squares()) & blocker_mask;
-            for blocking_square in BBWraper(blocking_squares) {
-                self.push_move(Move::quiet_move(bishop_square, blocking_square));
-            }
-        }
-        // Rook or queen
-        for rook_square in BBWraper(
-            board[Color::WHITE] & (board[Piece::ROOK] | board[Piece::QUEEN]) & self.free_pieces,
-        ) {
-            let blocking_squares =
-                rook_attack(rook_square, board.occupied_squares()) & blocker_mask;
-            for blocking_square in BBWraper(blocking_squares) {
-                self.push_move(Move::quiet_move(rook_square, blocking_square));
-            }
+        for square in BBWraper(attack & self.board.position.empty_squares()) {
+            self.push_move_internal(Move::new(origin_square, square));
         }
     }
 
-    // Pushes the moves that capture the given square
-    // King captures are handled in the king escape
-    fn capture_checker(&mut self, board: &HalfBoard, captured_square: Square) {
-        // Rook
-        let mut can_capture = rook_attack(captured_square, board.occupied_squares())
-            & board[Color::WHITE]
-            & (board[Piece::ROOK] | board[Piece::QUEEN]);
-        // Bishop
-        can_capture |= bishop_attack(captured_square, board.occupied_squares())
-            & board[Color::WHITE]
-            & (board[Piece::BISHOP] | board[Piece::QUEEN]);
-        // Knight
-        can_capture |= knight_attack(captured_square) & board[Color::WHITE] & board[Piece::KNIGHT];
-        // Pawn simple capture or promotion
-        if !(ROW_1 | ROW_2).has_square(captured_square) {
-            let mut pawn_simple_captures = BBWraper::empty();
-            if !FILE_A.has_square(captured_square) {
-                let origin_square = *BBWraper::from(captured_square.behind_left());
-                pawn_simple_captures |= origin_square & board[Color::WHITE] & board[Piece::PAWN]
-            }
-            if !FILE_H.has_square(captured_square) {
-                let origin_square = *BBWraper::from(captured_square.behind_right());
-                pawn_simple_captures |= origin_square & board[Color::WHITE] & board[Piece::PAWN]
-            }
-            if !ROW_8.has_square(captured_square) {
-                can_capture |= pawn_simple_captures;
-            } else {
-                // Promotion
-                let pawn_promotions = pawn_simple_captures.remove_squares(!self.free_pieces);
-                for capturing_square in BBWraper(pawn_promotions) {
-                    self.push_promotions_from_move(Move::tactical_move(
-                        capturing_square,
-                        captured_square,
-                        CAPTURE_FLAG | PROMOTION_FLAG,
-                    ));
-                }
-            }
+    // Push a pawn attack of the given color with the given flag taking care of promotions
+    fn push_pawn_attack(&mut self, origin: BitBoard, attack: BitBoard, flag: u16, color: Color) {
+        let non_promoting_pawns = attack & !PROMOTION_LINE[color];
+        let promoting_pawns = attack & PROMOTION_LINE[color];
+        for (origin, dest) in BBWraper(origin).zip(BBWraper(promoting_pawns)) {
+            self.push_promotions_from_move(Move::new_with_flags(origin, dest, flag))
         }
-
-        // En passant capture
-        if self.en_passant_target.is_some() && self.en_passant_target.unwrap() == captured_square {
-            for capturing_square in BBWraper(
-                board.en_passant_capture_start_squares() & board[Color::WHITE] & board[Piece::PAWN],
-            ) {
-                if board[captured_square.forward()].is_none()
-                    & self.can_take_en_passant(board, capturing_square)
-                {
-                    self.push_move(Move::tactical_move(
-                        capturing_square,
-                        captured_square.forward(),
-                        EN_PASSANT_CAPTURE_FLAG,
-                    ));
-                }
-            }
-        }
-
-        can_capture = can_capture.remove_squares(!self.free_pieces);
-
-        // Push the basic moves
-        for capturing_square in BBWraper(can_capture) {
-            self.push_move(Move::tactical_move(
-                capturing_square,
-                captured_square,
-                CAPTURE_FLAG,
-            ))
-        }
-    }
-
-    // Move fetching when there is no checks
-    // TODO fetch only captures first and then quiet moves to make it lazier
-    // ------------------------------------------------
-    fn fetch_possible_moves(&mut self, board: &HalfBoard) {
-        let free_pieces = board[Color::WHITE] & self.free_pieces;
-        // Simple pawn push ------------------------
-        let pawns = board[Piece::PAWN] & free_pieces;
-        let pushed_pawns = (pawns << 8) & board.empty_squares();
-
-        // No promotion
-        for dest_square in BBWraper(pushed_pawns & !ROW_8) {
-            self.push_move(Move::quiet_move(dest_square.behind(), dest_square));
-        }
-        // Promotion
-        for dest_square in BBWraper(pushed_pawns & ROW_8) {
-            self.push_promotions_from_move(Move::tactical_move(
-                dest_square.behind(),
-                dest_square,
-                PROMOTION_FLAG,
-            ));
-        }
-        // -----------------------------------------
-
-        // Double push, sets en passant flag -------
-        let starting_pawns = board[Piece::PAWN] & free_pieces & ROW_2;
-
-        // To be double pushed, the pawns have to be able to move once forward
-        let simple_pushed_pawns = (starting_pawns << 8) & board.empty_squares();
-        // The pawns that can both be pushed for one and two lines forward
-        let double_pushed_pawns = (simple_pushed_pawns << 8) & board.empty_squares();
-
-        for dest_square in BBWraper(double_pushed_pawns) {
-            self.push_move(Move::double_pawn_push_to(dest_square));
-        }
-        // -----------------------------------------
-
-        // Pawn captures ---------------------------
-        let left_capture_moves = (pawns & !FILE_A) << 9 & board[Color::BLACK];
-        let right_capture_moves = (pawns & !FILE_H) << 7 & board[Color::BLACK];
-        // Capture without promotions
-        for capture_square in BBWraper(left_capture_moves & !ROW_8) {
-            self.push_move(Move::tactical_move(
-                capture_square.behind_right(),
-                capture_square,
-                CAPTURE_FLAG,
-            ));
-        }
-        for capture_square in BBWraper(right_capture_moves & !ROW_8) {
-            self.push_move(Move::tactical_move(
-                capture_square.behind_left(),
-                capture_square,
-                CAPTURE_FLAG,
-            ));
-        }
-        // Capture with promotion
-        for capture_square in BBWraper(left_capture_moves & ROW_8) {
-            self.push_promotions_from_move(Move::tactical_move(
-                capture_square.behind_right(),
-                capture_square,
-                CAPTURE_FLAG | PROMOTION_FLAG,
-            ));
-        }
-        for capture_square in BBWraper(right_capture_moves & ROW_8) {
-            self.push_promotions_from_move(Move::tactical_move(
-                capture_square.behind_left(),
-                capture_square,
-                CAPTURE_FLAG | PROMOTION_FLAG,
-            ));
-        }
-        // -----------------------------------------
-
-        // En passant capture ----------------------
-        for pawn_origin_square in BBWraper(board.en_passant_capture_start_squares() & pawns) {
-            if board[board.en_passant.unwrap().forward()].is_none()
-                && self.can_take_en_passant(board, pawn_origin_square)
-            {
-                self.push_move(Move::tactical_move(
-                    pawn_origin_square,
-                    board.en_passant.unwrap().forward(),
-                    EN_PASSANT_CAPTURE_FLAG,
-                ));
-            }
-        }
-        // -----------------------------------------
-
-        // Knights moves ---------------------------
-        for knight_square in BBWraper(board[Piece::KNIGHT] & free_pieces) {
-            let attack = knight_attack(knight_square);
-            self.push_attack(board, knight_square, attack);
-        }
-        // -----------------------------------------
-
-        // Bishop moves ----------------------------
-        for bishop_square in BBWraper(board[Piece::BISHOP] & free_pieces) {
-            self.push_slider_attack(board, bishop_square, bishop_attack);
-        }
-        // -----------------------------------------
-
-        // Rook moves ------------------------------
-        for rook_square in BBWraper(board[Piece::ROOK] & free_pieces) {
-            self.push_slider_attack(board, rook_square, rook_attack);
-        }
-        // -----------------------------------------
-
-        // Queen moves -----------------------------
-        for queen_square in BBWraper(board[Piece::QUEEN] & free_pieces) {
-            self.push_slider_attack(board, queen_square, bishop_attack);
-            self.push_slider_attack(board, queen_square, rook_attack);
-        }
-        // -----------------------------------------
-
-        // King moves ------------------------------
-        // Moves
-        self.escape_king(board);
-        // Castle
-        let color = self.color;
-        if self.can_king_castle(board) {
-            self.push_move(KING_CASTLE_MOVES[color]);
-        }
-        if self.can_queen_castle(board) {
-            self.push_move(QUEEN_CASTLE_MOVES[color])
-        }
-        // -----------------------------------------
-
-        // Moves of pinned pieces ------------------
-        for i in 0..self.number_of_pinned_pieces {
-            let (pinned_square, pin_liberties) = self.pinned_pieces[i];
-            let pinned_piece = board[pinned_square].unwrap();
-            match pinned_piece {
-                Piece::PAWN => {
-                    // NOTE pinned pawns can never promote
-                    // Simple push
-                    let forward_square = pinned_square.forward();
-                    if board[forward_square].is_none() && pin_liberties.has_square(forward_square) {
-                        self.push_move(Move::quiet_move(pinned_square, forward_square));
-                        // Double push
-                        if ROW_2.has_square(pinned_square) {
-                            let double_push_square = forward_square.forward();
-                            // Here we don't have to check the pin mask
-                            if board[double_push_square].is_none() {
-                                self.push_move(Move::double_pawn_push(
-                                    pinned_square,
-                                    double_push_square,
-                                ));
-                            }
-                        }
-                    }
-                    // Left capture
-                    let capture_left_square = pinned_square.forward_left();
-                    if board[Color::BLACK].has_square(capture_left_square)
-                        && pin_liberties.has_square(capture_left_square)
-                    {
-                        self.push_move(Move::tactical_move(
-                            pinned_square,
-                            capture_left_square,
-                            CAPTURE_FLAG,
-                        ));
-                    }
-                    // Right capture
-                    let capture_right_square = pinned_square.forward_right();
-                    if board[Color::BLACK].has_square(capture_right_square)
-                        && pin_liberties.has_square(capture_right_square)
-                    {
-                        self.push_move(Move::tactical_move(
-                            pinned_square,
-                            capture_right_square,
-                            CAPTURE_FLAG,
-                        ));
-                    }
-                    // En passant
-                    if board
-                        .en_passant_capture_start_squares()
-                        .has_square(pinned_square)
-                    {
-                        let en_passant_dest_square = board.en_passant.unwrap().forward();
-                        if pin_liberties.has_square(en_passant_dest_square) {
-                            self.push_move(Move::tactical_move(
-                                pinned_square,
-                                en_passant_dest_square,
-                                EN_PASSANT_CAPTURE_FLAG,
-                            ));
-                        }
-                    }
-                }
-                Piece::BISHOP => self.push_pinned_slider_attack(
-                    board,
-                    pinned_square,
-                    pin_liberties,
-                    bishop_attack,
-                ),
-                Piece::ROOK => {
-                    self.push_pinned_slider_attack(board, pinned_square, pin_liberties, rook_attack)
-                }
-                Piece::QUEEN => {
-                    self.push_pinned_slider_attack(
-                        board,
-                        pinned_square,
-                        pin_liberties,
-                        bishop_attack,
-                    );
-                    self.push_pinned_slider_attack(
-                        board,
-                        pinned_square,
-                        pin_liberties,
-                        rook_attack,
-                    );
-                }
-                Piece::KNIGHT => (), // Knights cannot move if pinned
-                Piece::KING => panic!("King shouldn't be pinned"),
-            }
-        }
-        // -----------------------------------------
-    }
-
-    // Performs move ordering
-    // Here the captures are set first
-    fn order_moves(&mut self) {
-        let mut last_capture_index = 0;
-
-        for move_index in 0..self.number_of_legal_moves {
-            if self.move_stack[move_index].has_flags(CAPTURE_FLAG) {
-                if move_index != last_capture_index {
-                    // push the move to the end of the capture moves
-                    let capture_move = self.move_stack[move_index];
-                    self.move_stack[move_index] = self.move_stack[last_capture_index];
-                    self.move_stack[last_capture_index] = capture_move;
-                }
-                last_capture_index += 1;
-            }
-        }
-    }
-
-    pub fn is_king_checked(&self) -> bool {
-        self.number_of_checkers != 0
-    }
-
-    // Returns an attack map of the given position with White playing
-    pub fn attack_map(&self, board: &HalfBoard) -> BitBoard {
-        let mut attack_map = BBWraper::empty();
-        // Pawns
-        attack_map |= (board[Piece::PAWN] & board[Color::WHITE] & !FILE_A) << 9;
-        attack_map |= (board[Piece::PAWN] & board[Color::WHITE] & !FILE_H) << 7;
-        // Knights
-        for knight_square in BBWraper(board[Piece::KNIGHT] & board[Color::WHITE]) {
-            attack_map |= knight_attack(knight_square);
-        }
-        // Bishops
-        for bishop_square in BBWraper(board[Piece::BISHOP] & board[Color::WHITE]) {
-            attack_map |= bishop_attack(bishop_square, board.occupied_squares());
-        }
-        // Rooks
-        for rook_square in BBWraper(board[Piece::ROOK] & board[Color::WHITE]) {
-            attack_map |= rook_attack(rook_square, board.occupied_squares());
-        }
-        // Queens
-        for queen_square in BBWraper(board[Piece::QUEEN] & board[Color::WHITE]) {
-            attack_map |= bishop_attack(queen_square, board.occupied_squares());
-            attack_map |= rook_attack(queen_square, board.occupied_squares());
-        }
-        // King
-        attack_map |= king_attack(*SqWrapper::from(board[Piece::KING] & board[Color::WHITE]));
-
-        attack_map
-    }
-
-    pub fn capture_iterator(&mut self) -> CaptureIterator {
-        CaptureIterator::new(self)
-    }
-
-    pub fn number_of_legal_moves(&self) -> usize {
-        self.number_of_legal_moves
-    }
-}
-
-// The iterator function is straightforward and assumes that the moves have been sorted before
-impl Iterator for LegalMoveGenerator {
-    type Item = Move;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.next_iterator_move < self.number_of_legal_moves {
-            let iter_move = self.move_stack[self.next_iterator_move];
-            self.next_iterator_move += 1;
-
-            // Decorate the move and returns it
-            //Some(self.decorator.decorate_move(iter_move))
-            Some(iter_move)
-        } else {
-            None
-        }
-    }
-}
-
-// An helper structure to iterate over only the capture moves
-pub struct CaptureIterator<'a> {
-    move_generator: &'a mut LegalMoveGenerator,
-}
-
-impl<'a> CaptureIterator<'a> {
-    fn new(move_generator: &mut LegalMoveGenerator) -> CaptureIterator {
-        CaptureIterator { move_generator }
-    }
-}
-
-impl<'a> Iterator for CaptureIterator<'a> {
-    type Item = Move;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.move_generator.next() {
-            Some(next_move) => {
-                if Move::from(next_move).has_flags(CAPTURE_FLAG) {
-                    Some(next_move)
-                } else {
-                    None
-                }
-            }
-            None => None,
+        for (origin, dest) in BBWraper(origin).zip(BBWraper(non_promoting_pawns)) {
+            self.push_move_internal(Move::new_with_flags(origin, dest, flag))
         }
     }
 }
@@ -993,7 +635,7 @@ impl Board {
         let dest_row = chars[3];
         let mut origin_square = SqWrapper::from_char_file_rank(origin_file, origin_row);
         let mut dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
-        if self.side_to_move == Color::BLACK {
+        if self.position.side_to_move == Color::BLACK {
             origin_square = origin_square.transpose();
             dest_square = dest_square.transpose();
         }
@@ -1015,7 +657,7 @@ impl Board {
     pub fn print_possible_moves(&self) {
         let generator = self.create_legal_move_generator();
         for mov in generator {
-            if self.side_to_move == Color::BLACK {
+            if self.position.side_to_move == Color::BLACK {
                 println!("{}", Move::from(mov).transpose());
             } else {
                 println!("{}", Move::from(mov));
@@ -1024,7 +666,6 @@ impl Board {
     }
 }
 
-#[allow(clippy::unreadable_literal)]
 const fn en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
     let white_en_passant_candidates = [BBWraper::empty(); 8];
     for square in BBWraper(ROW_5) {
@@ -1075,7 +716,7 @@ fn generate_knight_attacks() -> AttackTable {
 
         for (i, j) in &knight_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard |= *BBWraper::from(SqWrapper::from_file_rank(
+                *attack_bitboard |= BitBoard::from(SqWrapper::from_file_rank(
                     (file + i) as u8,
                     (rank + j) as u8,
                 ));
@@ -1106,7 +747,7 @@ fn generate_king_attacks() -> AttackTable {
 
         for (i, j) in &king_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard |= *BBWraper::from(SqWrapper::from_file_rank(
+                *attack_bitboard |= BitBoard::from(SqWrapper::from_file_rank(
                     (file + i) as u8,
                     (rank + j) as u8,
                 ));

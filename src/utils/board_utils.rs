@@ -4,7 +4,7 @@ use std::cmp::{max, min};
 use std::convert::From;
 use std::fmt;
 use std::iter::FusedIterator;
-use std::ops::{Deref, Index, IndexMut};
+use std::ops::{Index, IndexMut};
 
 #[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
@@ -98,9 +98,11 @@ pub const fn file(number: u32) -> BitBoard {
 // Some constants declaration
 pub const ROW_1: BitBoard = 0xff;
 pub const ROW_2: BitBoard = 0xff00;
+pub const ROW_4: BitBoard = 0xff000000;
 pub const ROW_5: BitBoard = 0xff00000000;
 pub const ROW_7: BitBoard = 0xff000000000000;
 pub const ROW_8: BitBoard = 0xff00000000000000;
+pub const PROMOTION_LINE: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_1, ROW_8);
 
 pub const FILE_A: BitBoard = file(0);
 pub const FILE_B: BitBoard = file(1);
@@ -144,24 +146,10 @@ impl SqWrapper {
     }
 }
 
-impl Deref for SqWrapper {
-    type Target = Square;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl Deref for BBWraper {
-    type Target = BitBoard;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 pub trait SquareExt {
-    fn behind(self) -> Square;
-    fn forward(self) -> Square;
+    fn forward(self, Color) -> Square;
+    fn white_behind(self) -> Square;
+    fn white_forward(self) -> Square;
     fn forward_left(self) -> Square;
     fn forward_right(self) -> Square;
     fn behind_left(self) -> Square;
@@ -174,12 +162,18 @@ pub trait SquareExt {
 }
 
 impl SquareExt for Square {
+    fn forward(self, color: Color) -> Self {
+        match color {
+            Color::WHITE => self.white_forward(),
+            Color::BLACK => self.white_behind(),
+        }
+    }
     // Returns the square behind (1 row below)
-    fn behind(self) -> Self {
+    fn white_behind(self) -> Self {
         self - 8
     }
 
-    fn forward(self) -> Self {
+    fn white_forward(self) -> Self {
         self + 8
     }
 
@@ -222,9 +216,9 @@ impl SquareExt for Square {
     }
 }
 
-impl From<Square> for BBWraper {
-    fn from(square: Square) -> BBWraper {
-        BBWraper(1u64 << square)
+impl From<SqWrapper> for BitBoard {
+    fn from(square: SqWrapper) -> BitBoard {
+        1u64 << square.0
     }
 }
 
@@ -299,16 +293,16 @@ impl BBWraper {
     }
 }
 
-impl From<BitBoard> for SqWrapper {
-    fn from(bitboard: BitBoard) -> SqWrapper {
-        SqWrapper(bitboard.trailing_zeros() as u8)
+impl From<BBWraper> for Square {
+    fn from(bitboard: BBWraper) -> Square {
+        bitboard.0.trailing_zeros() as Square
     }
 }
 
 pub trait BitBoardExt {
     fn pop_lsb_as_square(&mut self) -> Square;
     fn has_square(self, square: Square) -> bool;
-    fn has_squares(self, squares: BitBoard) -> bool;
+    fn intersects(self, squares: BitBoard) -> bool;
     fn remove_square(self, square: Square) -> BitBoard;
     fn remove_squares(self, squares: BitBoard) -> BitBoard;
     fn add_square(self, square: Square) -> BitBoard;
@@ -320,24 +314,24 @@ impl BitBoardExt for BitBoard {
     fn pop_lsb_as_square(&mut self) -> Square {
         let singly_populated_bitboard = *self & self.overflowing_neg().0;
         *self ^= singly_populated_bitboard;
-        *SqWrapper::from(singly_populated_bitboard)
+        Square::from(BBWraper(singly_populated_bitboard))
     }
 
     fn has_square(self, square: Square) -> bool {
-        self & *BBWraper::from(square) != 0
+        self & BitBoard::from(SqWrapper(square)) != 0
     }
-    fn has_squares(self, squares: BitBoard) -> bool {
+    fn intersects(self, squares: BitBoard) -> bool {
         self & squares != 0
     }
 
     fn remove_square(self, square: Square) -> Self {
-        self.remove_squares(*BBWraper::from(square))
+        self.remove_squares(BitBoard::from(SqWrapper(square)))
     }
     fn remove_squares(self, squares: Self) -> Self {
         self & !squares
     }
     fn add_square(self, square: Square) -> Self {
-        self | *BBWraper::from(square)
+        self | BitBoard::from(SqWrapper(square))
     }
 
     fn population(self) -> u32 {

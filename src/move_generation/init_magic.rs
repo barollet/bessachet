@@ -128,7 +128,7 @@ fn direction_blockers_mask<F, G>(
     while check_bounds(kl) {
         kl = update(kl);
         let square_bitboard = square_from_coord(kl);
-        *result |= *BBWraper::from(square_bitboard);
+        *result |= BitBoard::from(SqWrapper(square_bitboard));
         if blockers.has_square(square_bitboard) {
             break;
         }
