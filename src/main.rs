@@ -7,6 +7,7 @@ extern crate array_init;
 mod board;
 mod evaluation;
 mod hash_tables;
+#[macro_use]
 mod move_generation;
 mod search;
 mod utils;
@@ -27,7 +28,7 @@ fn main() {
     while let Some(tt_entry) = TRANSPOSITION_TABLE.probe(board.zobrist_hasher.zobrist_key) {
         println!(
             "{}",
-            if board.side_to_move == Color::WHITE {
+            if board.position.side_to_move == Color::WHITE {
                 tt_entry.best_move
             } else {
                 tt_entry.best_move.transpose()

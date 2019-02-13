@@ -31,7 +31,7 @@ impl Board {
         let side_multiplier = self.position.side_to_move.side_multiplier();
         if let Some(pawn_entry) = unsafe { PAWN_TABLE.probe(key) } {
             // Table hit
-            side_multiplier * pawn_entry.evaluation as f32
+            side_multiplier * f32::from(pawn_entry.evaluation)
         } else {
             // Table miss, we compute the entry and try to insert it
             let pawn_evaluation = self.doubled_pawns_score()
@@ -47,7 +47,7 @@ impl Board {
     }
 
     fn doubled_pawns_score(&self) -> f32 {
-        let position = self.position;
+        let position = &self.position;
         -0.5 * FILES.iter().fold(0.0, |acc, file| {
             acc + (position[Piece::PAWN] & position[Color::WHITE] & *file).population() as f32 - 1.0
         }) + 0.5
@@ -58,7 +58,7 @@ impl Board {
     }
 
     fn isolated_pawns_score(&self) -> f32 {
-        let position = self.position;
+        let position = &self.position;
         -0.5 * ISOLATION_MASK.iter().fold(0, |acc, (mask, file)| {
             acc + if (position[Piece::PAWN] & position[Color::WHITE] & *mask).population() == 0 {
                 file.population()

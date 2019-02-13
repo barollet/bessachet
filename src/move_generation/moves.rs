@@ -185,7 +185,7 @@ impl ExtendedMove {
 
 impl PartialEq for Move {
     fn eq(&self, other: &Self) -> bool {
-        self.0 & 0xffff == other.0 & 0xffff
+        self.0 == other.0
     }
 }
 
@@ -227,7 +227,7 @@ impl From<ExtendedMove> for Move {
 
 impl From<Move> for ExtendedMove {
     fn from(raw_move: Move) -> ExtendedMove {
-        ExtendedMove(raw_move.0 as u64)
+        ExtendedMove(u64::from(raw_move.0))
     }
 }
 

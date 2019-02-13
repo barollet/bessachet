@@ -13,6 +13,7 @@ fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
     if depth == 1 {
         return generator.number_of_legal_moves();
     }
+    //search_legal_moves!(for mov in board do )
     generator.fold(0, |acc, mov| {
         let ext_mov = board.make(mov);
 
@@ -20,7 +21,7 @@ fn internal_perft(board: &mut Board, depth: u8, start_depth: u8) -> usize {
         if depth == start_depth {
             println!(
                 "{}: {}",
-                if board.side_to_move == Color::BLACK {
+                if board.position.side_to_move == Color::BLACK {
                     Move::from(mov)
                 } else {
                     Move::from(mov).transpose()

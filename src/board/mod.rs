@@ -60,32 +60,27 @@ impl Board {
     // Returns a board representing a given position
     // Two halfboards and initial parameters
     // NOTE: The position should be given from White pov
-    pub fn init_from_position(position: &Position, halfmove_clock: u8, ply: u8) -> Self {
-        let mailbox_88 = MailBox88::initialize(position);
-        let mut board = Board {
-            position: *position, // Copies the position
+    pub fn init_from_position(position: Position, halfmove_clock: u8, ply: u8) -> Self {
+        let mailbox_88 = MailBox88::initialize(&position);
+        Board {
             mailbox_88,
 
-            move_gen: MoveGenHelper::initialize(position),
-            zobrist_hasher: ZobristHasher::initialize((position, &mailbox_88)),
-            material_evaluator: MaterialEvaluator::initialize(position),
+            move_gen: MoveGenHelper::initialize(&position),
+            zobrist_hasher: ZobristHasher::initialize((&position, &mailbox_88)),
+            material_evaluator: MaterialEvaluator::initialize(&position),
+
+            position, // We move the position once we initialized everything
 
             capture_stack: [Piece::PAWN; 32], // We could let it uninitialized
             capture_stack_size: 0,
 
             halfmove_clock,
             ply,
-        };
-
-        board
+        }
     }
 
     pub fn initial_position() -> Self {
-        Self::init_from_position(&Position::initial_position(), 0, 0)
-    }
-
-    fn empty_board() -> Self {
-        Self::init_from_position(&Position::empty_board(), 0, 0)
+        Self::init_from_position(Position::initial_position(), 0, 0)
     }
 }
 
@@ -167,13 +162,12 @@ impl Board {
     // For make and unmake procedure, we assume that the provided move is valid
     // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, mov: Move) -> ExtendedMove {
-        let position = self.position;
-        let player_color = position.side_to_move;
+        let player_color = self.position.side_to_move;
         let opponent_color = player_color.transpose();
         let moved_piece = self[mov.origin_square()].unwrap();
 
-        let old_caslting_rights = position.castling_rights;
-        let old_en_passant_square = position.en_passant;
+        let old_caslting_rights = self.position.castling_rights;
+        let old_en_passant_square = self.position.en_passant;
         let old_halfmove_clock = self.halfmove_clock;
 
         self.halfmove_clock = if moved_piece == Piece::PAWN {
@@ -197,7 +191,7 @@ impl Board {
                         && mov.destination_square()
                             == rook_square($side, RookSquare::ORIGIN, $color.transpose())
                     {
-                        position.castling_rights &=
+                        self.position.castling_rights &=
                             rights_mask($side, Rights::REMOVE, $color.transpose());
                     }
                 };
@@ -222,7 +216,7 @@ impl Board {
 
         // En passant capture (before updating en passant target from double push)
         if mov.is_en_passant_capture() {
-            let en_passant_square = position.en_passant.unwrap().get();
+            let en_passant_square = self.position.en_passant.unwrap().get();
             self.delete_piece(en_passant_square, Piece::PAWN, opponent_color);
 
             self.halfmove_clock = 0;
@@ -230,13 +224,13 @@ impl Board {
 
         // Castling, move the other rook
         // Castling rights are removed when the king moves
-        if let Some((rook_from, rook_dest)) = mov.get_castling_rook(position.side_to_move) {
+        if let Some((rook_from, rook_dest)) = mov.get_castling_rook(self.position.side_to_move) {
             self.move_piece(rook_from, rook_dest, Piece::ROOK, player_color);
         }
 
         // Double pawn push, set the en passant target
-        position.en_passant = mov.get_en_passant_target_square();
-        let new_en_passant_square = position.en_passant;
+        self.position.en_passant = mov.get_en_passant_target_square();
+        let new_en_passant_square = self.position.en_passant;
         self.zobrist_hasher
             .update_en_passant(old_en_passant_square, new_en_passant_square);
 
@@ -250,29 +244,29 @@ impl Board {
 
         // Castling rights update
         if moved_piece == Piece::KING {
-            position.castling_rights &=
+            self.position.castling_rights &=
                 rights_mask(CastlingSide::BOTH, Rights::REMOVE, player_color);
         } else if moved_piece == Piece::ROOK {
             if mov.origin_square()
                 == rook_square(CastlingSide::KING, RookSquare::ORIGIN, player_color)
             {
-                position.castling_rights &=
+                self.position.castling_rights &=
                     rights_mask(CastlingSide::KING, Rights::REMOVE, player_color);
             } else if mov.origin_square()
                 == rook_square(CastlingSide::QUEEN, RookSquare::ORIGIN, player_color)
             {
-                position.castling_rights &=
+                self.position.castling_rights &=
                     rights_mask(CastlingSide::QUEEN, Rights::REMOVE, player_color);
             }
         }
 
-        let new_castling_rights = position.castling_rights;
+        let new_castling_rights = self.position.castling_rights;
         self.zobrist_hasher
             .update_castling_rights(old_caslting_rights, new_castling_rights);
 
         // Update the side to move
         self.zobrist_hasher.update_side_to_move();
-        position.side_to_move = opponent_color;
+        self.position.side_to_move = opponent_color;
 
         self.ply += 1;
 
@@ -288,9 +282,8 @@ impl Board {
     // play state (and vice versa)
     pub fn unmake(&mut self, ext_mov: ExtendedMove) {
         // Move the piece back
-        let position = self.position;
-        let played_color = position.side_to_move.transpose();
-        let played_color_opponent = position.side_to_move;
+        let played_color = self.position.side_to_move.transpose();
+        let played_color_opponent = self.position.side_to_move;
         let mov = Move::from(ext_mov);
         let moved_piece = self[mov.destination_square()].unwrap();
 
@@ -324,10 +317,10 @@ impl Board {
 
         // Restoring en passant, caslting rights and halfmove clock from the move metadata
         // En passant restoration
-        let en_passant_square_to_remove = position.en_passant;
+        let en_passant_square_to_remove = self.position.en_passant;
 
-        position.en_passant = ext_mov.get_en_passant_target();
-        let new_en_passant_square = position.en_passant;
+        self.position.en_passant = ext_mov.get_en_passant_target();
+        let new_en_passant_square = self.position.en_passant;
         self.zobrist_hasher
             .update_en_passant(en_passant_square_to_remove, new_en_passant_square);
 
@@ -338,9 +331,9 @@ impl Board {
         }
 
         // Castling rights restoration
-        let old_caslting_rights = position.castling_rights;
+        let old_caslting_rights = self.position.castling_rights;
         let restored_castling_rights = ext_mov.get_castling_rights();
-        position.castling_rights = restored_castling_rights;
+        self.position.castling_rights = restored_castling_rights;
 
         self.zobrist_hasher
             .update_castling_rights(old_caslting_rights, restored_castling_rights);
@@ -349,7 +342,7 @@ impl Board {
         self.halfmove_clock = ext_mov.get_halfmove_clock();
 
         self.zobrist_hasher.update_side_to_move();
-        position.side_to_move = played_color;
+        self.position.side_to_move = played_color;
 
         self.ply -= 1;
     }

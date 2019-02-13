@@ -57,9 +57,9 @@ fn pre_compute_material_table() -> [i8; MATERIAL_TABLE_SIZE] {
 
     macro_rules! for_piece {
         ($piece:expr, $max_number:expr, $body:expr) => {
-            for _i in 0..($max_number + 1) {
+            for _i in 0..=$max_number {
                 material_evaluator.uncapture_piece($piece, Color::WHITE);
-                for _i in 0..($max_number + 1) {
+                for _i in 0..=$max_number {
                     material_evaluator.uncapture_piece($piece, Color::BLACK);
                     $body;
                     material_evaluator.capture_piece($piece, Color::BLACK);
@@ -221,10 +221,10 @@ impl MaterialEvaluator {
     pub fn evaluation(&self, side_to_move: Color) -> f32 {
         let side_multiplier = side_to_move.side_multiplier();
         if self.valid_index {
-            side_multiplier * MATERIAL_TABLE[self.table_index as usize] as f32
+            side_multiplier * f32::from(MATERIAL_TABLE[self.table_index as usize])
         } else {
             // If the index is not a common constellation, we compute everything by hand
-            side_multiplier * material_value(&self.populations) as f32
+            side_multiplier * f32::from(material_value(&self.populations))
         }
     }
 }

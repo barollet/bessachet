@@ -6,6 +6,7 @@ use std::ptr;
 use self::init_magic::*;
 pub use self::moves::*;
 use board::prelude::*;
+use std::convert::From;
 use utils::*;
 
 // Perft tests for move generation, see move_generation/perft_tests.rs
@@ -146,10 +147,10 @@ impl<'a> AuxiliaryStruct<'a> for MoveGenHelper {
         };
 
         // Pinned pieces and checks by sliders
-        mgh.compute_pinned_pieces(position, Piece::BISHOP, bishop_xray_attack);
-        mgh.compute_pinned_pieces(position, Piece::ROOK, rook_xray_attack);
+        mgh.compute_pinned_pieces(&position, Piece::BISHOP, bishop_xray_attack);
+        mgh.compute_pinned_pieces(&position, Piece::ROOK, rook_xray_attack);
 
-        mgh.compute_pawn_knight_checkers(position);
+        mgh.compute_pawn_knight_checkers(&position);
 
         mgh
     }
@@ -246,18 +247,31 @@ impl MoveGenHelper {
 
 // A pseudo legal move list, illegal moves from absolutely pinned pieces are already removed
 // This does a legality check for en passant capture and king moves
-pub struct PseudoLegalMoveGenerator<'a> {
-    // Board reference to implement functions in PseudoLegalMoveGenerator interface
+pub struct PseudoLegalGenerator<'a> {
     board: &'a Board,
-
     // NOTE: The maximum size is 128 even if we can construct a position with 218 moves
     // maybe we have to change this to 218 or a dynamically sized struct
+    moves_list: [Move; 128],
+    number_of_moves: usize,
+}
+
+pub struct PseudoLegalMoveList {
     moves_list: [Move; 128],
     iterator_move: usize,
     number_of_moves: usize,
 }
 
-impl<'a> Iterator for PseudoLegalMoveGenerator<'a> {
+impl<'a> From<&mut PseudoLegalGenerator<'a>> for PseudoLegalMoveList {
+    fn from(generator: &mut PseudoLegalGenerator) -> PseudoLegalMoveList {
+        PseudoLegalMoveList {
+            moves_list: generator.moves_list,
+            number_of_moves: generator.number_of_moves,
+            iterator_move: 0,
+        }
+    }
+}
+
+impl Iterator for PseudoLegalMoveList {
     type Item = Move;
 
     fn next(&mut self) -> Option<Move> {
@@ -272,34 +286,69 @@ impl<'a> Iterator for PseudoLegalMoveGenerator<'a> {
     }
 }
 
-// A struct to hold the legality check and making moves
-pub struct LegalMoveMaker<'a> {
-    pseudo_legal_mov_gen: PseudoLegalMoveGenerator<'a>,
+macro_rules! make_legal_move_internal {
+    ($move_iterator: ident, $mov: ident, $board: ident, $work: stmt, $block: block) => {
+        for pmov in $move_iterator {
+            // If the move can be illegal we test it and cancel it if it is indeed illegal
+            let is_king_mov = $board[pmov.origin_square()].unwrap() == $crate::utils::board_utils::Piece::KING;
+            // The move can't be illegal
+            let ext_mov = if !pmov.has_exact_flags($crate::move_generation::moves::EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
+                $board.make(pmov)
+            } else {
+                // If it can be illegal we test legality
+                match $board.legality_check(pmov) {
+                    Some(ext_mov) => ext_mov,
+                    None => continue,
+                }
+            };
+
+            $work
+
+            $board.unmake(ext_mov);
+
+            let $mov = Move::from(ext_mov);
+
+            $block
+        }
+    }
 }
 
-impl<'a> Iterator for LegalMoveMaker<'a> {
-    type Item = ExtendedMove;
-
-    fn next(&mut self) -> Option<ExtendedMove> {
-        let board = self.pseudo_legal_mov_gen.board;
-        // We try the next pseudo legal move if there is one
-        self.pseudo_legal_mov_gen.next().map_or(None, |mov| {
-            // If this is not a king move or an en passant capture we know the move is legal
-            let is_king_mov = board[mov.origin_square()].unwrap() == Piece::KING;
-            if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
-                Some(board.make(mov))
-            } else {
-                // Otherwise we check the legality of the move
-                board.legality_check(mov).or_else(|| self.next())
-            }
-        })
+#[macro_export]
+macro_rules! search_legal_moves {
+    (for $mov: ident in $board: ident do $work: stmt => $block: block) => {
+        // We generate the pseudo legal move list to iterate over without mutable reference
+        let move_list = $board.generate_pseudo_legal_moves();
+        make_legal_move_internal!(move_list, $mov, $board, $work, $block);
+    };
+    (for $mov: ident in $board: ident => $block: block) => {
+        search_legal_moves!(for $mov in $board do let _ = () => $block);
+    };
+    (for $mov: ident in $board: ident do $work: stmt) => {
+        search_legal_moves!(for $mov in $board do $work => {});
     }
+}
+
+#[macro_export]
+macro_rules! for_legal_moves_in {
+    ($board: ident do $work: stmt => $block: block) => {
+        search_legal_moves!(for _mov in $board do $work => $block);
+    };
+}
+
+#[macro_export]
+macro_rules! for_legal_captures_in {
+    ($board: ident do $work: stmt => $block: block) => {
+        let move_list = $board
+            .generate_pseudo_legal_moves()
+            .filter(|mov| mov.is_capture());
+        make_legal_move_internal!(move_list, _mov, $board, $work, $block);
+    };
 }
 
 // Helpers
 impl Board {
     // Make a move and check if it is legal, if not unmake the move and returns None
-    fn legality_check(&mut self, mov: Move) -> Option<ExtendedMove> {
+    pub fn legality_check(&mut self, mov: Move) -> Option<ExtendedMove> {
         // Make the move
         let ext_mov = self.make(mov);
         // Test legality
@@ -336,60 +385,56 @@ impl Board {
             // This can be avoided for en passant capture
             || king_attack(square).intersects(opponent_pieces & self.position[Piece::KING])
     }
+
+    pub fn is_king_checked(&self) -> bool {
+        let player_color = self.position.side_to_move;
+        let king_square = self.position.king_square(player_color);
+        self.is_in_check(king_square, player_color.transpose())
+    }
 }
 
 // Move generation functions
 impl Board {
-    fn generate_pseudo_legal_moves(&mut self) -> PseudoLegalMoveGenerator {
+    pub fn generate_pseudo_legal_moves(&mut self) -> PseudoLegalMoveList {
         // We update the checks and pins on demand
         self.move_gen = MoveGenHelper::initialize(&self.position);
 
-        let mut pseudo_legal_mov_gen = PseudoLegalMoveGenerator::new(&self);
+        let mut pseudo_legal_mov_gen = PseudoLegalGenerator::new(&self);
 
         // If not in check, we fetch the move as usual
         if self.move_gen.number_of_checkers == 0 {
-            pseudo_legal_mov_gen.all_moves();
+            pseudo_legal_mov_gen.all_moves()
         } else if self.move_gen.number_of_checkers == 1 {
             // If in simple check we can block the slider, capture the checker or escape the king
             pseudo_legal_mov_gen
+                .capture_and_block_checker()
                 .escape_king()
-                .capture_and_block_checker();
         } else {
             // If in double check we can only escape the king
             debug_assert_eq!(self.move_gen.number_of_checkers, 2);
-            pseudo_legal_mov_gen.escape_king();
-        }
-
-        pseudo_legal_mov_gen
-    }
-
-    pub fn legal_move_maker(&self) -> LegalMoveMaker {
-        LegalMoveMaker {
-            pseudo_legal_mov_gen: self.generate_pseudo_legal_moves(),
+            pseudo_legal_mov_gen.escape_king()
         }
     }
 }
 
-impl<'a> PseudoLegalMoveGenerator<'a> {
-    fn new(board: &Board) -> PseudoLegalMoveGenerator {
-        PseudoLegalMoveGenerator {
+impl<'a> PseudoLegalGenerator<'a> {
+    fn new(board: &Board) -> PseudoLegalGenerator {
+        PseudoLegalGenerator {
             board,
-
             moves_list: [NULL_MOVE; 128],
-            iterator_move: 0,
             number_of_moves: 0,
         }
     }
 
-    fn escape_king(&mut self) -> &PseudoLegalMoveGenerator {
+    fn escape_king(&mut self) -> PseudoLegalMoveList {
         let player_color = self.board.position.side_to_move;
         let king_square = self.board.position.king_square(player_color);
         self.push_attack(king_square, king_attack(king_square));
 
-        self
+        PseudoLegalMoveList::from(self)
     }
 
-    fn capture_and_block_checker(&mut self) -> &PseudoLegalMoveGenerator {
+    fn capture_and_block_checker(&mut self) -> &mut PseudoLegalGenerator<'a> {
         let checker_square = self.board.move_gen.checkers[0];
         let checker_piece = self.board[checker_square].unwrap();
 
@@ -407,12 +452,12 @@ impl<'a> PseudoLegalMoveGenerator<'a> {
         self.all_moves_with_target(target_mask)
     }
 
-    fn all_moves(&mut self) -> &PseudoLegalMoveGenerator {
-        self.all_moves_with_target(BBWraper::full())
+    fn all_moves(&mut self) -> PseudoLegalMoveList {
+        self.all_moves_with_target(BBWraper::full()).escape_king()
     }
 
     // Generate only moves that ends in the target mask
-    fn all_moves_with_target(&mut self, target_mask: BitBoard) -> &PseudoLegalMoveGenerator {
+    fn all_moves_with_target(&mut self, target_mask: BitBoard) -> &mut PseudoLegalGenerator<'a> {
         let player_color = self.board.position.side_to_move;
         let player_pieces = self.board.position[player_color];
         let opponent_pieces = self.board.position[player_color.transpose()];
@@ -485,7 +530,8 @@ impl<'a> PseudoLegalMoveGenerator<'a> {
         sliding_attack!(Piece::ROOK, rook_attack);
 
         // Pinned pieces
-        for (square, liberties) in self.board.move_gen.pinned_pieces_iterator() {
+        let pinned_pieces = self.board.move_gen.pinned_pieces_iterator();
+        for (square, liberties) in pinned_pieces {
             let occupied_squares = self.board.position.occupied_squares();
             match self.board[square].unwrap() {
                 // pinned pawn can push, double push, capture, capture en passant but not promote
@@ -550,19 +596,22 @@ impl<'a> PseudoLegalMoveGenerator<'a> {
         // King
         // We generate king moves and castling if we are not engaged in check
         if target_mask == BBWraper::empty() {
-            self.castling();
-            self.escape_king()
+            self.castling()
         } else {
             self
         }
     }
 
-    fn castling(&mut self) -> &PseudoLegalMoveGenerator {
+    fn castling(&mut self) -> &mut PseudoLegalGenerator<'a> {
         let player_color = self.board.position.side_to_move;
         // King side
-        if self.can_castle(player_color, CastlingSide::KING) {}
+        if self.can_castle(player_color, CastlingSide::KING) {
+            self.push_move_internal(KING_CASTLE_MOVES[player_color]);
+        }
         // Queen side
-        if self.can_castle(player_color, CastlingSide::QUEEN) {}
+        if self.can_castle(player_color, CastlingSide::QUEEN) {
+            self.push_move_internal(QUEEN_CASTLE_MOVES[player_color]);
+        }
         self
     }
 
@@ -578,7 +627,7 @@ impl<'a> PseudoLegalMoveGenerator<'a> {
 }
 
 // Manipulation helpers
-impl<'a> PseudoLegalMoveGenerator<'a> {
+impl<'a> PseudoLegalGenerator<'a> {
     fn push_move(&mut self, origin: Square, dest: Square, flags: u16) {
         self.push_move_internal(Move::new_with_flags(origin, dest, flags));
     }
@@ -625,7 +674,6 @@ impl<'a> PseudoLegalMoveGenerator<'a> {
 /* Debugging interface */
 impl Board {
     #[allow(dead_code)]
-    // TODO redo interface to for example e2e3 instead of e 2 e 3
     pub fn play_move(&mut self, mov: &str) {
         let chars: Vec<_> = mov.chars().collect();
         assert_eq!(chars.len(), 4);
@@ -633,20 +681,20 @@ impl Board {
         let origin_row = chars[1];
         let dest_file = chars[2];
         let dest_row = chars[3];
-        let mut origin_square = SqWrapper::from_char_file_rank(origin_file, origin_row);
-        let mut dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
-        if self.position.side_to_move == Color::BLACK {
-            origin_square = origin_square.transpose();
-            dest_square = dest_square.transpose();
-        }
-        let generator = self.create_legal_move_generator();
-        for ext_mov in generator {
-            let mov = Move::from(ext_mov);
+        let origin_square = SqWrapper::from_char_file_rank(origin_file, origin_row);
+        let dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
+        // If the move is pseudo legal we panic!
+        let move_list = self.generate_pseudo_legal_moves();
+        for mov in move_list {
             if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
-                self.make(ext_mov);
                 return;
             }
         }
+        /*
+        search_legal_moves!(for mov in self do let _ = if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
+            return;
+        });
+        */
         panic!(
             "Can't find move {}{}{}{}",
             origin_file, origin_row, dest_file, dest_row
@@ -654,19 +702,15 @@ impl Board {
     }
 
     #[allow(dead_code)]
-    pub fn print_possible_moves(&self) {
-        let generator = self.create_legal_move_generator();
-        for mov in generator {
-            if self.position.side_to_move == Color::BLACK {
-                println!("{}", Move::from(mov).transpose());
-            } else {
-                println!("{}", Move::from(mov));
-            }
-        }
+    // TODO better interface only to print moves
+    pub fn print_possible_moves(&mut self) {
+        search_legal_moves!(for mov in self => {
+            println!("{}", mov);
+        });
     }
 }
 
-const fn en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
+fn en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
     let white_en_passant_candidates = [BBWraper::empty(); 8];
     for square in BBWraper(ROW_5) {
         if square.file() != 0 {

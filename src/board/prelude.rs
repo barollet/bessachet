@@ -1,3 +1,4 @@
+#![allow(clippy::unreadable_literal)]
 use std::ops::{Index, IndexMut};
 
 pub use board::fen::*;
@@ -13,27 +14,30 @@ pub trait AuxiliaryStruct<'a> {
 }
 
 // Castling type enum for indexing
+#[derive(Clone, Copy)]
 pub enum CastlingSide {
     KING = 0,
     QUEEN,
     BOTH,
 }
 
+#[derive(Clone, Copy)]
 pub enum Mask {
     EMPTY = 0,
     CHECK,
 }
 
-pub const fn squares_mask(side: CastlingSide, kind: Mask, color: Color) -> BitBoard {
+pub fn squares_mask(side: CastlingSide, kind: Mask, color: Color) -> BitBoard {
     CASTLING_MASKS[side as usize][kind as usize][color]
 }
 
+#[derive(Clone, Copy)]
 pub enum Rights {
     REMOVE = 0,
     ALLOWED,
 }
 
-pub const fn rights_mask(side: CastlingSide, kind: Rights, color: Color) -> u8 {
+pub fn rights_mask(side: CastlingSide, kind: Rights, color: Color) -> u8 {
     CASTLING_RIGHTS[side as usize][kind as usize][color]
 }
 
@@ -42,7 +46,7 @@ pub enum RookSquare {
     DEST,
 }
 
-pub const fn rook_square(side: CastlingSide, kind: RookSquare, color: Color) -> Square {
+pub fn rook_square(side: CastlingSide, kind: RookSquare, color: Color) -> Square {
     CASTLING_RIGHTS[side as usize][kind as usize][color]
 }
 

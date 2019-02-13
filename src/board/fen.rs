@@ -16,7 +16,7 @@ impl Board {
         // Starting from the bottom line in white's perspective
         let mut occupancy: BlackWhiteAttribute<BitBoard> =
             BlackWhiteAttribute::new(BBWraper::empty(), BBWraper::empty());
-        let piece_array = [BBWraper::empty(); 6];
+        let mut piece_array = [BBWraper::empty(); 6];
         for (piece_line, i) in piece_lines.iter().rev().zip(0u32..) {
             let mut pos = 8;
             for c in piece_line.chars() {
@@ -86,6 +86,6 @@ impl Board {
             castling_rights,
             side_to_move,
         };
-        Ok(Board::init_from_position(&position, 0, 0))
+        Ok(Board::init_from_position(position, 0, 0))
     }
 }

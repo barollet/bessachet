@@ -16,30 +16,23 @@ impl Board {
             alpha = stand_pat;
         }
 
-        macro_rules! quiescence_proc {
-            ($mov: ident) => {
-                let umove = self.make($mov);
-                let score = -self.quiesce(-beta, -alpha);
-                self.unmake(umove);
-
-                if score >= beta {
-                    return beta;
-                }
-                if score > alpha {
-                    alpha = score;
-                }
-            };
+        macro_rules! quiesce_loop {
+            ($macro: ident) => {
+                $macro!(self do let score = -self.quiesce(-beta, -alpha) => {
+                    if score >= beta {
+                        return beta;
+                    }
+                    if score > alpha {
+                        alpha = score;
+                    }
+                });
+            }
         }
         // If check then all moves
-        let mut move_generator = self.create_legal_move_generator();
-        if move_generator.is_king_checked() {
-            for mov in move_generator {
-                quiescence_proc!(mov);
-            }
+        if self.is_king_checked() {
+            quiesce_loop!(for_legal_moves_in);
         } else {
-            for capture in move_generator.capture_iterator() {
-                quiescence_proc!(capture);
-            }
+            quiesce_loop!(for_legal_captures_in);
         };
 
         alpha
@@ -59,17 +52,11 @@ impl Board {
             return self.quiesce(alpha, beta);
         }
 
-        // TODO merge alpha and max score?
         let mut best_mov = NULL_MOVE;
         let mut max_score = f32::NEG_INFINITY;
         let mut node_type = NodeType::AllNode;
 
-        let move_generator = self.create_legal_move_generator();
-        for mov in move_generator {
-            let umove = self.make(mov);
-            let score = -self.alpha_beta(-beta, -alpha, depth_left - 1);
-            self.unmake(umove);
-
+        search_legal_moves!(for mov in self do let score = -self.alpha_beta(-beta, -alpha, depth_left - 1) => {
             if score > max_score {
                 max_score = score;
                 best_mov = mov;
@@ -79,7 +66,7 @@ impl Board {
                 // Write result in TT
                 TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
                     key,
-                    Move::from(mov), // Refutation move
+                    mov, // Refutation move
                     depth_left,
                     score,
                     NodeType::CutNode,
@@ -90,7 +77,7 @@ impl Board {
                 node_type = NodeType::PVNode;
                 alpha = score;
             }
-        }
+        });
 
         // Write result in TT
         // Alpha move or PV move
@@ -116,7 +103,7 @@ impl Board {
     }
 
     pub fn search(&mut self, depth: u8) {
-        for dep in 1..depth + 1 {
+        for dep in 1..=depth {
             self.alpha_beta(f32::NEG_INFINITY, f32::INFINITY, dep);
         }
     }
