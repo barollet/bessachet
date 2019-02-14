@@ -333,6 +333,9 @@ macro_rules! for_legal_moves_in {
     ($board: ident do $work: stmt => $block: block) => {
         search_legal_moves!(for _mov in $board do $work => $block);
     };
+    ($board: ident => $block: block) => {
+        search_legal_moves!(for _mov in $board do let _ = () => $block);
+    };
 }
 
 #[macro_export]
@@ -414,6 +417,14 @@ impl Board {
             debug_assert_eq!(self.move_gen.number_of_checkers, 2);
             pseudo_legal_mov_gen.escape_king()
         }
+    }
+
+    // Need a mutable reference to test pseudo legal moves
+    fn number_of_legal_moves(&mut self) -> usize {
+        let mut number_of_legal_moves = 0;
+        for_legal_moves_in!(self => {number_of_legal_moves += 1});
+
+        number_of_legal_moves
     }
 }
 
@@ -707,6 +718,37 @@ impl Board {
         search_legal_moves!(for mov in self => {
             println!("{}", mov);
         });
+    }
+
+    // Perft values
+    fn internal_perft(&mut self, depth: u8, start_depth: u8) -> usize {
+        if depth == 1 {
+            return self.number_of_legal_moves();
+        }
+        let mut perft_value = 0;
+        search_legal_moves!(for mov in self do let partial_sum = self.internal_perft(depth - 1, start_depth) => {
+            if depth == start_depth {
+                println!(
+                    "{}: {}",
+                    if self.position.side_to_move == Color::BLACK {
+                        Move::from(mov)
+                    } else {
+                        Move::from(mov).transpose()
+                    },
+                    partial_sum
+                );
+            }
+
+            perft_value += partial_sum;
+        });
+
+        perft_value
+    }
+
+    // Runs a perft test of the given depth on the given board
+    pub fn perft(&mut self, depth: u8) -> usize {
+        assert!(depth > 0);
+        self.internal_perft(depth, depth)
     }
 }
 
