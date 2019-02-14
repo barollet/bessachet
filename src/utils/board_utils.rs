@@ -307,6 +307,9 @@ pub trait BitBoardExt {
     fn remove_squares(self, squares: BitBoard) -> BitBoard;
     fn add_square(self, square: Square) -> BitBoard;
     fn population(self) -> u32;
+    fn push(self, Color) -> BitBoard;
+    fn left_capture(self, Color) -> BitBoard;
+    fn right_capture(self, Color) -> BitBoard;
 }
 
 impl BitBoardExt for BitBoard {
@@ -336,6 +339,24 @@ impl BitBoardExt for BitBoard {
 
     fn population(self) -> u32 {
         self.count_ones()
+    }
+    fn push(self, color: Color) -> BitBoard {
+        match color {
+            Color::WHITE => self << 8,
+            Color::BLACK => self >> 8,
+        }
+    }
+    fn left_capture(self, color: Color) -> BitBoard {
+        match color {
+            Color::WHITE => self << 9,
+            Color::BLACK => self >> 9,
+        }
+    }
+    fn right_capture(self, color: Color) -> BitBoard {
+        match color {
+            Color::WHITE => self << 7,
+            Color::BLACK => self >> 7,
+        }
     }
 }
 

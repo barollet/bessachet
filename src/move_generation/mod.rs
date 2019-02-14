@@ -212,7 +212,7 @@ impl MoveGenHelper {
         let king_square = pos.king_square(pos.side_to_move);
         let opponent_color = pos.side_to_move.transpose();
 
-        for piece_square in BBWraper(pos[piece] | pos[Piece::QUEEN] & pos[opponent_color]) {
+        for piece_square in BBWraper((pos[piece] | pos[Piece::QUEEN]) & pos[opponent_color]) {
             let xray_attack = xray_function(piece_square, pos.occupied_squares());
             if xray_attack.has_square(king_square) {
                 self.decide_pin_check(pos, piece_square, king_square);
@@ -479,30 +479,27 @@ impl<'a> PseudoLegalGenerator<'a> {
         // Pawns
         let pawns = self.board.position[Piece::PAWN] & player_pieces & free_pieces;
         // Push
-        let push_shift = PAWN_PUSH_SHIFT[player_color];
 
-        let simple_pushed_pawns = (pawns << push_shift) & empty_squares & target_mask;
-        let origin_pawns = simple_pushed_pawns >> push_shift;
+        let simple_pushed_pawns = pawns.push(player_color) & empty_squares & target_mask;
+        let origin_pawns = simple_pushed_pawns.push(player_color.transpose()); // Push back
         self.push_pawn_attack(origin_pawns, simple_pushed_pawns, NO_FLAG, player_color);
-
-        let (left_capture_shift, right_capture_shift) = PAWN_CAPTURE_SHIFT[player_color];
 
         // Capture left
         let captures_dest =
-            ((pawns & !FILE_A) << left_capture_shift) & opponent_pieces & target_mask;
-        let captures_origin = captures_dest >> left_capture_shift;
+            (pawns & !FILE_A).left_capture(player_color) & opponent_pieces & target_mask;
+        let captures_origin = captures_dest.left_capture(player_color.transpose());
         self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
         // Capture right
         let captures_dest =
-            ((pawns & !FILE_H) << right_capture_shift) & opponent_pieces & target_mask;
-        let captures_origin = captures_dest >> right_capture_shift;
+            (pawns & !FILE_H).right_capture(player_color) & opponent_pieces & target_mask;
+        let captures_origin = captures_dest.right_capture(player_color.transpose());
         self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
         // Double push
-        let double_pushed = (simple_pushed_pawns << push_shift)
+        let double_pushed = simple_pushed_pawns.push(player_color)
             & empty_squares
             & EN_PASSANT_LINE[player_color]
             & target_mask;
-        let origin_pawns = double_pushed >> (2 * push_shift);
+        let origin_pawns = double_pushed.push(player_color.transpose()).push(player_color.transpose());
         self.push_pawn_attack(origin_pawns, double_pushed, DOUBLE_PUSH_FLAG, player_color);
         // En passant (we don't need the target mask as en passant capture will be checked
         // afterward anyway)
@@ -773,8 +770,12 @@ fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
     let white_pawn_attacks = [BBWraper::empty(); 64]; // First and last row while remain empty
 
     for square in BBWraper(SQUARES & !ROW_1 & !ROW_8) {
-        white_pawn_attacks[square as usize].add_square(square.forward_left());
-        white_pawn_attacks[square as usize].add_square(square.forward_right());
+        if !FILE_A.has_square(square) {
+            white_pawn_attacks[square as usize].add_square(square.forward_left());
+        }
+        if !FILE_H.has_square(square) {
+            white_pawn_attacks[square as usize].add_square(square.forward_right());
+        }
     }
 
     let black_pawn_attacks = array_init::array_init(|i| white_pawn_attacks[i] << 16);
@@ -802,7 +803,7 @@ fn generate_knight_attacks() -> AttackTable {
 
         for (i, j) in &knight_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard |= BitBoard::from(SqWrapper::from_file_rank(
+                *attack_bitboard = attack_bitboard.add_square(SqWrapper::from_file_rank(
                     (file + i) as u8,
                     (rank + j) as u8,
                 ));

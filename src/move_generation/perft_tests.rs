@@ -8,14 +8,16 @@ use board::Board;
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
+    board.print_possible_moves();
+
     let init_key = board.zobrist_hasher.zobrist_key;
 
-    assert_eq!(board.perft(6), 119_060_324);
-    assert_eq!(board.perft(5), 4_865_609);
-    assert_eq!(board.perft(4), 197_281);
-    assert_eq!(board.perft(3), 8902);
+    //assert_eq!(board.perft(6), 119_060_324);
+    //assert_eq!(board.perft(5), 4_865_609);
+    //assert_eq!(board.perft(4), 197_281);
+    //assert_eq!(board.perft(3), 8902);
     assert_eq!(board.perft(2), 400);
-    assert_eq!(board.perft(1), 20);
+    //assert_eq!(board.perft(1), 20);
 
     assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }
@@ -29,10 +31,10 @@ fn perft_kiwipete() {
     let init_key = board.zobrist_hasher.zobrist_key;
 
     assert_eq!(board.perft(5), 193_690_690);
-    assert_eq!(board.perft(4), 4_085_603);
-    assert_eq!(board.perft(3), 97862);
-    assert_eq!(board.perft(2), 2039);
-    assert_eq!(board.perft(1), 48);
+    //assert_eq!(board.perft(4), 4_085_603);
+    //assert_eq!(board.perft(3), 97862);
+    //assert_eq!(board.perft(2), 2039);
+    //assert_eq!(board.perft(1), 48);
 
     assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }

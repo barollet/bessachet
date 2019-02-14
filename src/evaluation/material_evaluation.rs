@@ -2,6 +2,7 @@ use board::prelude::*;
 use std::ops::{Index, IndexMut};
 use utils::*;
 
+
 // (3*3*3*2*9)^2 = 486^2 = 236,196 which is about 1/4 MB
 // NOTE: We use H.G. Muller's material index with a constant offset to avoid negative index
 // See: http://www.talkchess.com/forum3/viewtopic.php?t=33561
