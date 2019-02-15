@@ -108,7 +108,7 @@ impl Position {
 impl Board {
     // Piece manipulation
     // TODO check that we dont promote too much queens
-    fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
+    fn create_piece_internal(&mut self, square: Square, piece: Piece, color: Color) {
         let set_mask = BitBoard::from(SqWrapper(square));
         self.position[piece] |= set_mask;
         self.position[color] |= set_mask;
@@ -120,11 +120,14 @@ impl Board {
         if piece == Piece::PAWN {
             self.zobrist_hasher.update_pawn_capture(square, color);
         }
+    }
 
+    fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
+        self.create_piece_internal(square, piece, color);
         self.material_evaluator.uncapture_piece(piece, color);
     }
 
-    fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
+    fn delete_piece_internal(&mut self, square: Square, piece: Piece, color: Color) {
         let reset_mask = !BitBoard::from(SqWrapper(square));
         self.position[piece] &= reset_mask;
         self.position[color] &= reset_mask;
@@ -135,14 +138,16 @@ impl Board {
         if piece == Piece::PAWN {
             self.zobrist_hasher.update_pawn_capture(square, color);
         }
+    }
 
+    fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
+        self.delete_piece_internal(square, piece, color);
         self.material_evaluator.capture_piece(piece, color);
     }
 
-    // TODO remove the material evaluation update when moving
     fn move_piece(&mut self, from: Square, to: Square, piece: Piece, color: Color) {
-        self.delete_piece(from, piece, color);
-        self.create_piece(to, piece, color);
+        self.delete_piece_internal(from, piece, color);
+        self.create_piece_internal(to, piece, color);
     }
 
     // Capture stack manipulation

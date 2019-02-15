@@ -8,7 +8,7 @@ use board::Board;
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
-    board.play_move("e2e3");
+    //board.play_move("a2a4");
 
     board.print_possible_moves();
 
@@ -16,10 +16,10 @@ fn perft_initial_position() {
 
     //assert_eq!(board.perft(6), 119_060_324);
     //assert_eq!(board.perft(5), 4_865_609);
-    //assert_eq!(board.perft(4), 197_281);
+    assert_eq!(board.perft(4), 197_281);
     //assert_eq!(board.perft(3), 8902);
     //assert_eq!(board.perft(2), 400);
-    assert_eq!(board.perft(1), 20);
+    //assert_eq!(board.perft(1), 20);
 
     assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }

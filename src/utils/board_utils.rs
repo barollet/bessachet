@@ -351,13 +351,13 @@ impl BitBoardExt for BitBoard {
     fn left_capture(self, color: Color) -> BitBoard {
         match color {
             Color::WHITE => self << 9,
-            Color::BLACK => self >> 9,
+            Color::BLACK => self >> 7,
         }
     }
     fn right_capture(self, color: Color) -> BitBoard {
         match color {
             Color::WHITE => self << 7,
-            Color::BLACK => self >> 7,
+            Color::BLACK => self >> 9,
         }
     }
 }

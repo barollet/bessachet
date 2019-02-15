@@ -50,7 +50,7 @@ lazy_static! {
     static ref PAWN_ATTACK_TABLE: BlackWhiteAttribute<AttackTable> = generate_pawn_attacks(); // 2*512 bytes
 
     // returns the BitBoard of candidates to capture and en passant target on the given file
-    pub static ref EN_PASSANT_TABLE: BlackWhiteAttribute<[BitBoard; 8]> = en_passant_table(); // 2*64 bytes 8*8 bitboards
+    pub static ref EN_PASSANT_TABLE: BlackWhiteAttribute<[BitBoard; 8]> = generate_en_passant_table(); // 2*64 bytes 8*8 bitboards
 }
 
 const EN_PASSANT_LINE: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_5, ROW_4);
@@ -176,7 +176,7 @@ impl MoveGenHelper {
     fn push_pinned(&mut self, pinned_square: Square, liberties: BitBoard) {
         self.pinned_pieces[self.number_of_pinned_pieces] = (pinned_square, liberties);
         self.number_of_pinned_pieces += 1;
-        self.free_pieces.remove_square(pinned_square);
+        self.free_pieces = self.free_pieces.remove_square(pinned_square);
     }
     // Push a new checker
     fn push_checker(&mut self, checker_square: Square) {
@@ -305,24 +305,32 @@ impl<'a> Iterator for LegalMoveList<'a> {
                 Some(mov)
             } else {
                 // Otherwise we do a legality check and we unmake the move
-                self.board.legality_check(mov).map_or(self.next(), |ext_mov| {
-                    self.board.unmake(ext_mov);
-                    Some(mov)
-                })
+                // NOTE we cannot use map or or map_or_else
+                match self.board.legality_check(mov) {
+                    Some(ext_mov) => {
+                        self.board.unmake(ext_mov);
+                        Some(mov)
+                    }
+                    None => self.next(),
+                }
             }
         })
     }
 }
 
 pub struct LegalMoveMakerWithWork<'a, F, G>
-where F: FnMut(&mut Board) -> G {
+where
+    F: FnMut(&mut Board) -> G,
+{
     board: &'a mut Board,
     move_gen: PseudoLegalMoveList,
     intermediate_work: F,
 }
 
 impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
-where F: FnMut(&mut Board) -> G {
+where
+    F: FnMut(&mut Board) -> G,
+{
     pub fn new(board: &'a mut Board, intermediate_work: F) -> LegalMoveMakerWithWork<'a, F, G> {
         LegalMoveMakerWithWork {
             move_gen: board.generate_pseudo_legal_moves(),
@@ -333,9 +341,10 @@ where F: FnMut(&mut Board) -> G {
 }
 
 impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
-where F: FnMut(&mut Board) -> G {
-    fn work_and_unmake(&mut self, ext_mov: ExtendedMove) -> G
-    {
+where
+    F: FnMut(&mut Board) -> G,
+{
+    fn work_and_unmake(&mut self, ext_mov: ExtendedMove) -> G {
         let intermediate_work = &mut self.intermediate_work;
         let score = intermediate_work(self.board);
 
@@ -346,7 +355,9 @@ where F: FnMut(&mut Board) -> G {
 }
 
 impl<'a, F, G> Iterator for LegalMoveMakerWithWork<'a, F, G>
-where F: FnMut(&mut Board) -> G {
+where
+    F: FnMut(&mut Board) -> G,
+{
     type Item = (Move, G);
     fn next(&mut self) -> Option<Self::Item> {
         self.move_gen.next().map_or(None, |mov| {
@@ -357,7 +368,10 @@ where F: FnMut(&mut Board) -> G {
 
                 Some((mov, self.work_and_unmake(ext_mov)))
             } else {
-                self.board.legality_check(mov).map_or(self.next(), |ext_mov| Some((mov, self.work_and_unmake(ext_mov))))
+                match self.board.legality_check(mov) {
+                    Some(ext_mov) => Some((mov, self.work_and_unmake(ext_mov))),
+                    None => self.next(),
+                }
             }
         })
     }
@@ -368,9 +382,9 @@ impl Board {
     // Make a move and check if it is legal, if not unmake the move and returns None
     pub fn legality_check(&mut self, mov: Move) -> Option<ExtendedMove> {
         // Make the move
+        let player_color = self.position.side_to_move;
         let ext_mov = self.make(mov);
         // Test legality
-        let player_color = self.position.side_to_move;
         let king_square = self.position.king_square(player_color);
         if self.is_in_check(king_square, player_color) {
             // Is in check, not legal
@@ -499,19 +513,21 @@ impl<'a> PseudoLegalGenerator<'a> {
         // Capture left
         let captures_dest =
             (pawns & !FILE_A).left_capture(player_color) & opponent_pieces & target_mask;
-        let captures_origin = captures_dest.left_capture(player_color.transpose());
+        let captures_origin = captures_dest.right_capture(player_color.transpose());
         self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
         // Capture right
         let captures_dest =
             (pawns & !FILE_H).right_capture(player_color) & opponent_pieces & target_mask;
-        let captures_origin = captures_dest.right_capture(player_color.transpose());
+        let captures_origin = captures_dest.left_capture(player_color.transpose());
         self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
         // Double push
-        let double_pushed = simple_pushed_pawns.push(player_color)
+        let double_pushed = (pawns.push(player_color) & empty_squares).push(player_color)
             & empty_squares
             & EN_PASSANT_LINE[player_color]
             & target_mask;
-        let origin_pawns = double_pushed.push(player_color.transpose()).push(player_color.transpose());
+        let origin_pawns = double_pushed
+            .push(player_color.transpose())
+            .push(player_color.transpose());
         self.push_pawn_attack(origin_pawns, double_pushed, DOUBLE_PUSH_FLAG, player_color);
         // En passant (we don't need the target mask as en passant capture will be checked
         // afterward anyway)
@@ -574,7 +590,9 @@ impl<'a> PseudoLegalGenerator<'a> {
                         }
                     }
                     // Capture
-                    for dest in BBWraper(pawn_attack(square, player_color) & liberties) {
+                    for dest in
+                        BBWraper(pawn_attack(square, player_color) & opponent_pieces & liberties)
+                    {
                         self.push_move(square, dest, CAPTURE_FLAG);
                     }
                     // En passant capture
@@ -705,9 +723,14 @@ impl Board {
         let dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
 
         LegalMoveList::new(self)
-            .find(|mov|
-                  mov.origin_square() == origin_square && mov.destination_square() == dest_square)
-            .map(|mov| self.make(mov)).expect(&format!("Move not found {}{}{}{}", origin_file, origin_row, dest_file, dest_row));
+            .find(|mov| {
+                mov.origin_square() == origin_square && mov.destination_square() == dest_square
+            })
+            .map(|mov| self.make(mov))
+            .expect(&format!(
+                "Move not found {}{}{}{}",
+                origin_file, origin_row, dest_file, dest_row
+            ));
     }
 
     #[allow(dead_code)]
@@ -723,9 +746,8 @@ impl Board {
             return self.number_of_legal_moves();
         }
 
-        let move_maker = LegalMoveMakerWithWork::new(self, |board| {
-            board.internal_perft(depth - 1, start_depth)
-        });
+        let move_maker =
+            LegalMoveMakerWithWork::new(self, |board| board.internal_perft(depth - 1, start_depth));
 
         move_maker.fold(0, |acc, (mov, partial_sum)| {
             if depth == start_depth {
@@ -743,14 +765,16 @@ impl Board {
     }
 }
 
-fn en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
-    let white_en_passant_candidates = [BBWraper::empty(); 8];
+fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
+    let mut white_en_passant_candidates = [BBWraper::empty(); 8];
     for square in BBWraper(ROW_5) {
         if square.file() != 0 {
-            white_en_passant_candidates[square as usize].add_square(square.left());
+            white_en_passant_candidates[square.file() as usize] =
+                white_en_passant_candidates[square.file() as usize].add_square(square.left());
         }
         if square.file() != 7 {
-            white_en_passant_candidates[square as usize].add_square(square.right());
+            white_en_passant_candidates[square.file() as usize] =
+                white_en_passant_candidates[square.file() as usize].add_square(square.right());
         }
     }
 
@@ -761,20 +785,22 @@ fn en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
 }
 
 fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
-    let white_pawn_attacks = [BBWraper::empty(); 64]; // First and last row while remain empty
+    let mut white_pawn_attacks = [BBWraper::empty(); 64]; // First and last row while remain empty
 
     for square in BBWraper(SQUARES & !ROW_1 & !ROW_8) {
         if !FILE_A.has_square(square) {
-            white_pawn_attacks[square as usize].add_square(square.forward_left());
+            white_pawn_attacks[square as usize] =
+                white_pawn_attacks[square as usize].add_square(square.forward_left());
         }
         if !FILE_H.has_square(square) {
-            white_pawn_attacks[square as usize].add_square(square.forward_right());
+            white_pawn_attacks[square as usize] =
+                white_pawn_attacks[square as usize].add_square(square.forward_right());
         }
     }
 
-    let black_pawn_attacks = array_init::array_init(|i| white_pawn_attacks[i] << 16);
+    let black_pawn_attacks = array_init::array_init(|i| white_pawn_attacks[i] >> 16);
 
-    BlackWhiteAttribute::new(white_pawn_attacks, black_pawn_attacks)
+    BlackWhiteAttribute::new(black_pawn_attacks, white_pawn_attacks)
 }
 
 fn generate_knight_attacks() -> AttackTable {
@@ -828,7 +854,7 @@ fn generate_king_attacks() -> AttackTable {
 
         for (i, j) in &king_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard |= BitBoard::from(SqWrapper::from_file_rank(
+                *attack_bitboard = attack_bitboard.add_square(SqWrapper::from_file_rank(
                     (file + i) as u8,
                     (rank + j) as u8,
                 ));
