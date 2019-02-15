@@ -189,6 +189,7 @@ impl PartialEq for Move {
     }
 }
 
+/*
 impl Transpose for Move {
     fn transpose(&self) -> Self {
         let origin_square = self.origin_square().transpose();
@@ -200,6 +201,7 @@ impl Transpose for Move {
         transposed_move
     }
 }
+*/
 
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

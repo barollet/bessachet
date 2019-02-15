@@ -8,6 +8,8 @@ use board::Board;
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
+    board.play_move("e2e3");
+
     board.print_possible_moves();
 
     let init_key = board.zobrist_hasher.zobrist_key;

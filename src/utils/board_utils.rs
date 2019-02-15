@@ -257,11 +257,13 @@ pub trait Transpose {
     fn transpose(&self) -> Self;
 }
 
+/*
 impl Transpose for Square {
     fn transpose(&self) -> Self {
         63 - self
     }
 }
+*/
 
 impl Transpose for Color {
     fn transpose(&self) -> Self {
@@ -360,6 +362,7 @@ impl BitBoardExt for BitBoard {
     }
 }
 
+/*
 impl Transpose for BitBoard {
     #[clippy::allow(clippy::unreadable_literal)]
     fn transpose(&self) -> Self {
@@ -381,6 +384,7 @@ impl Transpose for BitBoard {
         x
     }
 }
+*/
 
 // Iterates over the bits of the given bitboard and returns the associated Square
 // starting from the MSB

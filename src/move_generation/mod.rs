@@ -53,11 +53,6 @@ lazy_static! {
     pub static ref EN_PASSANT_TABLE: BlackWhiteAttribute<[BitBoard; 8]> = en_passant_table(); // 2*64 bytes 8*8 bitboards
 }
 
-const PAWN_PUSH_SHIFT: BlackWhiteAttribute<i8> = BlackWhiteAttribute::new(-8, 8);
-// Capture is given as (left, right) from white pov
-const PAWN_CAPTURE_SHIFT: BlackWhiteAttribute<(i8, i8)> =
-    BlackWhiteAttribute::new((-7, -9), (9, 7));
-// Used for double push destination
 const EN_PASSANT_LINE: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_5, ROW_4);
 const STARTING_ROW: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_7, ROW_2);
 

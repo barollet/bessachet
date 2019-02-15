@@ -26,14 +26,7 @@ fn main() {
 
     board.search(7);
     while let Some(tt_entry) = TRANSPOSITION_TABLE.probe(board.zobrist_hasher.zobrist_key) {
-        println!(
-            "{}",
-            if board.position.side_to_move == Color::WHITE {
-                tt_entry.best_move
-            } else {
-                tt_entry.best_move.transpose()
-            }
-        );
+        println!("{}", tt_entry.best_move);
         board.make(tt_entry.best_move);
         println!(
             "value: {}",
