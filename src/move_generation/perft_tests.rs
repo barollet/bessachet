@@ -16,8 +16,8 @@ fn perft_initial_position() {
     //assert_eq!(board.perft(5), 4_865_609);
     //assert_eq!(board.perft(4), 197_281);
     //assert_eq!(board.perft(3), 8902);
-    assert_eq!(board.perft(2), 400);
-    //assert_eq!(board.perft(1), 20);
+    //assert_eq!(board.perft(2), 400);
+    assert_eq!(board.perft(1), 20);
 
     assert_eq!(init_key, board.zobrist_hasher.zobrist_key);
 }

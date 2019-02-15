@@ -286,66 +286,86 @@ impl Iterator for PseudoLegalMoveList {
     }
 }
 
-macro_rules! make_legal_move_internal {
-    ($move_iterator: ident, $mov: ident, $board: ident, $work: stmt, $block: block) => {
-        for pmov in $move_iterator {
-            // If the move can be illegal we test it and cancel it if it is indeed illegal
-            let is_king_mov = $board[pmov.origin_square()].unwrap() == $crate::utils::board_utils::Piece::KING;
-            // The move can't be illegal
-            let ext_mov = if !pmov.has_exact_flags($crate::move_generation::moves::EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
-                $board.make(pmov)
-            } else {
-                // If it can be illegal we test legality
-                match $board.legality_check(pmov) {
-                    Some(ext_mov) => ext_mov,
-                    None => continue,
-                }
-            };
+pub struct LegalMoveList<'a> {
+    board: &'a mut Board,
+    move_gen: PseudoLegalMoveList,
+}
 
-            $work
-
-            $board.unmake(ext_mov);
-
-            let $mov = Move::from(ext_mov);
-
-            $block
+impl<'a> LegalMoveList<'a> {
+    fn new(board: &'a mut Board) -> LegalMoveList<'a> {
+        LegalMoveList {
+            move_gen: board.generate_pseudo_legal_moves(),
+            board,
         }
     }
 }
 
-#[macro_export]
-macro_rules! search_legal_moves {
-    (for $mov: ident in $board: ident do $work: stmt => $block: block) => {
-        // We generate the pseudo legal move list to iterate over without mutable reference
-        let move_list = $board.generate_pseudo_legal_moves();
-        make_legal_move_internal!(move_list, $mov, $board, $work, $block);
-    };
-    (for $mov: ident in $board: ident => $block: block) => {
-        search_legal_moves!(for $mov in $board do let _ = () => $block);
-    };
-    (for $mov: ident in $board: ident do $work: stmt) => {
-        search_legal_moves!(for $mov in $board do $work => {});
+impl<'a> Iterator for LegalMoveList<'a> {
+    type Item = Move;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.move_gen.next().map_or(None, |mov| {
+            let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
+            // If the move can't be illegal
+            if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
+                Some(mov)
+            } else {
+                // Otherwise we do a legality check and we unmake the move
+                self.board.legality_check(mov).map_or(self.next(), |ext_mov| {
+                    self.board.unmake(ext_mov);
+                    Some(mov)
+                })
+            }
+        })
     }
 }
 
-#[macro_export]
-macro_rules! for_legal_moves_in {
-    ($board: ident do $work: stmt => $block: block) => {
-        search_legal_moves!(for _mov in $board do $work => $block);
-    };
-    ($board: ident => $block: block) => {
-        search_legal_moves!(for _mov in $board do let _ = () => $block);
-    };
+pub struct LegalMoveMakerWithWork<'a, F, G>
+where F: FnMut(&mut Board) -> G {
+    board: &'a mut Board,
+    move_gen: PseudoLegalMoveList,
+    intermediate_work: F,
 }
 
-#[macro_export]
-macro_rules! for_legal_captures_in {
-    ($board: ident do $work: stmt => $block: block) => {
-        let move_list = $board
-            .generate_pseudo_legal_moves()
-            .filter(|mov| mov.is_capture());
-        make_legal_move_internal!(move_list, _mov, $board, $work, $block);
-    };
+impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
+where F: FnMut(&mut Board) -> G {
+    pub fn new(board: &'a mut Board, intermediate_work: F) -> LegalMoveMakerWithWork<'a, F, G> {
+        LegalMoveMakerWithWork {
+            move_gen: board.generate_pseudo_legal_moves(),
+            board,
+            intermediate_work,
+        }
+    }
+}
+
+impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
+where F: FnMut(&mut Board) -> G {
+    fn work_and_unmake(&mut self, ext_mov: ExtendedMove) -> G
+    {
+        let intermediate_work = &mut self.intermediate_work;
+        let score = intermediate_work(self.board);
+
+        self.board.unmake(ext_mov);
+
+        score
+    }
+}
+
+impl<'a, F, G> Iterator for LegalMoveMakerWithWork<'a, F, G>
+where F: FnMut(&mut Board) -> G {
+    type Item = (Move, G);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.move_gen.next().map_or(None, |mov| {
+            // If the move can be illegal we test it and cancel it if it is indeed illegal
+            let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
+            if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
+                let ext_mov = self.board.make(mov);
+
+                Some((mov, self.work_and_unmake(ext_mov)))
+            } else {
+                self.board.legality_check(mov).map_or(self.next(), |ext_mov| Some((mov, self.work_and_unmake(ext_mov))))
+            }
+        })
+    }
 }
 
 // Helpers
@@ -421,10 +441,7 @@ impl Board {
 
     // Need a mutable reference to test pseudo legal moves
     fn number_of_legal_moves(&mut self) -> usize {
-        let mut number_of_legal_moves = 0;
-        for_legal_moves_in!(self => {number_of_legal_moves += 1});
-
-        number_of_legal_moves
+        LegalMoveList::new(self).count()
     }
 }
 
@@ -691,30 +708,18 @@ impl Board {
         let dest_row = chars[3];
         let origin_square = SqWrapper::from_char_file_rank(origin_file, origin_row);
         let dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
-        // If the move is pseudo legal we panic!
-        let move_list = self.generate_pseudo_legal_moves();
-        for mov in move_list {
-            if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
-                return;
-            }
-        }
-        /*
-        search_legal_moves!(for mov in self do let _ = if mov.origin_square() == origin_square && mov.destination_square() == dest_square {
-            return;
-        });
-        */
-        panic!(
-            "Can't find move {}{}{}{}",
-            origin_file, origin_row, dest_file, dest_row
-        );
+
+        LegalMoveList::new(self)
+            .find(|mov|
+                  mov.origin_square() == origin_square && mov.destination_square() == dest_square)
+            .map(|mov| self.make(mov)).expect(&format!("Move not found {}{}{}{}", origin_file, origin_row, dest_file, dest_row));
     }
 
     #[allow(dead_code)]
-    // TODO better interface only to print moves
     pub fn print_possible_moves(&mut self) {
-        search_legal_moves!(for mov in self => {
+        for mov in LegalMoveList::new(self) {
             println!("{}", mov);
-        });
+        }
     }
 
     // Perft values
@@ -722,24 +727,18 @@ impl Board {
         if depth == 1 {
             return self.number_of_legal_moves();
         }
-        let mut perft_value = 0;
-        search_legal_moves!(for mov in self do let partial_sum = self.internal_perft(depth - 1, start_depth) => {
-            if depth == start_depth {
-                println!(
-                    "{}: {}",
-                    if self.position.side_to_move == Color::BLACK {
-                        Move::from(mov)
-                    } else {
-                        Move::from(mov).transpose()
-                    },
-                    partial_sum
-                );
-            }
 
-            perft_value += partial_sum;
+        let move_maker = LegalMoveMakerWithWork::new(self, |board| {
+            board.internal_perft(depth - 1, start_depth)
         });
 
-        perft_value
+        move_maker.fold(0, |acc, (mov, partial_sum)| {
+            if depth == start_depth {
+                println!("{}: {}", Move::from(mov), partial_sum);
+            }
+
+            acc + partial_sum
+        })
     }
 
     // Runs a perft test of the given depth on the given board

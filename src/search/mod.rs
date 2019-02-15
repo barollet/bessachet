@@ -1,7 +1,7 @@
 use board::Board;
 use evaluation::*;
 use hash_tables::*;
-use move_generation::{Move, NULL_MOVE};
+use move_generation::*;
 use std::f32;
 
 /* Basic sequential alpha beta implementation */
@@ -16,23 +16,31 @@ impl Board {
             alpha = stand_pat;
         }
 
-        macro_rules! quiesce_loop {
-            ($macro: ident) => {
-                $macro!(self do let score = -self.quiesce(-beta, -alpha) => {
-                    if score >= beta {
-                        return beta;
-                    }
-                    if score > alpha {
-                        alpha = score;
-                    }
-                });
-            }
-        }
+        let is_king_checked = self.is_king_checked();
+
+        let move_maker = LegalMoveMakerWithWork::new(self, move |board| {
+            -board.quiesce(-beta, -alpha)
+        });
+
         // If check then all moves
-        if self.is_king_checked() {
-            quiesce_loop!(for_legal_moves_in);
+        if is_king_checked {
+            for (mov, score) in move_maker {
+                if score >= beta {
+                    return beta;
+                }
+                if score > alpha {
+                    alpha = score;
+                }
+            }
         } else {
-            quiesce_loop!(for_legal_captures_in);
+            for (mov, score) in move_maker.filter(|(mov, _s)| mov.is_capture()) {
+                if score >= beta {
+                    return beta;
+                }
+                if score > alpha {
+                    alpha = score;
+                }
+            }
         };
 
         alpha
@@ -56,7 +64,10 @@ impl Board {
         let mut max_score = f32::NEG_INFINITY;
         let mut node_type = NodeType::AllNode;
 
-        search_legal_moves!(for mov in self do let score = -self.alpha_beta(-beta, -alpha, depth_left - 1) => {
+        let move_maker = LegalMoveMakerWithWork::new(self, move |board| {
+            -board.alpha_beta(-beta, -alpha, depth_left - 1)
+        });
+        for (mov, score) in move_maker {
             if score > max_score {
                 max_score = score;
                 best_mov = mov;
@@ -77,7 +88,7 @@ impl Board {
                 node_type = NodeType::PVNode;
                 alpha = score;
             }
-        });
+        }
 
         // Write result in TT
         // Alpha move or PV move
