@@ -575,6 +575,7 @@ impl<'a> PseudoLegalGenerator<'a> {
                     // Push
                     let simple_push_dest = square.forward(player_color);
                     if liberties.has_square(simple_push_dest)
+                        && target_mask.has_square(simple_push_dest)
                         && self.board[simple_push_dest].is_none()
                     {
                         self.push_move(square, simple_push_dest, NO_FLAG);
@@ -583,6 +584,7 @@ impl<'a> PseudoLegalGenerator<'a> {
                     if STARTING_ROW[player_color].has_square(square) {
                         let double_push_dest = simple_push_dest.forward(player_color);
                         if liberties.has_square(double_push_dest)
+                            && target_mask.has_square(double_push_dest)
                             && self.board[simple_push_dest].is_none()
                             && self.board[double_push_dest].is_none()
                         {
@@ -590,9 +592,12 @@ impl<'a> PseudoLegalGenerator<'a> {
                         }
                     }
                     // Capture
-                    for dest in
-                        BBWraper(pawn_attack(square, player_color) & opponent_pieces & liberties)
-                    {
+                    for dest in BBWraper(
+                        pawn_attack(square, player_color)
+                            & opponent_pieces
+                            & liberties
+                            & target_mask,
+                    ) {
                         self.push_move(square, dest, CAPTURE_FLAG);
                     }
                     // En passant capture
@@ -779,7 +784,7 @@ fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
     }
 
     let black_en_passant_candidates =
-        array_init::array_init(|i| white_en_passant_candidates[i] << 8);
+        array_init::array_init(|i| white_en_passant_candidates[i] >> 8);
 
     BlackWhiteAttribute::new(black_en_passant_candidates, white_en_passant_candidates)
 }
