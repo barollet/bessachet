@@ -703,13 +703,12 @@ impl<'a> PseudoLegalGenerator<'a> {
 
     // Push a pawn attack of the given color with the given flag taking care of promotions
     fn push_pawn_attack(&mut self, origin: BitBoard, attack: BitBoard, flag: u16, color: Color) {
-        let non_promoting_pawns = attack & !PROMOTION_LINE[color];
-        let promoting_pawns = attack & PROMOTION_LINE[color];
-        for (origin, dest) in BBWraper(origin).zip(BBWraper(promoting_pawns)) {
-            self.push_promotions_from_move(Move::new_with_flags(origin, dest, flag))
-        }
-        for (origin, dest) in BBWraper(origin).zip(BBWraper(non_promoting_pawns)) {
-            self.push_move_internal(Move::new_with_flags(origin, dest, flag))
+        for (origin, dest) in BBWraper(origin).zip(BBWraper(attack)) {
+            if PROMOTION_LINE[color].has_square(dest) {
+                self.push_promotions_from_move(Move::new_with_flags(origin, dest, flag))
+            } else {
+                self.push_move_internal(Move::new_with_flags(origin, dest, flag))
+            }
         }
     }
 }
@@ -792,7 +791,7 @@ fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
 fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
     let mut white_pawn_attacks = [BBWraper::empty(); 64]; // First and last row while remain empty
 
-    for square in BBWraper(SQUARES & !ROW_1 & !ROW_8) {
+    for square in BBWraper(SQUARES & !ROW_8) {
         if !FILE_A.has_square(square) {
             white_pawn_attacks[square as usize] =
                 white_pawn_attacks[square as usize].add_square(square.forward_left());
@@ -803,7 +802,12 @@ fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
         }
     }
 
-    let black_pawn_attacks = array_init::array_init(|i| white_pawn_attacks[i] >> 16);
+    let mut black_pawn_attacks: [BitBoard; 64] =
+        array_init::array_init(|i| white_pawn_attacks[i] >> 16);
+    for square in BBWraper(ROW_8) {
+        black_pawn_attacks[square as usize] =
+            black_pawn_attacks[square.forward(Color::BLACK) as usize] << 8;
+    }
 
     BlackWhiteAttribute::new(black_pawn_attacks, white_pawn_attacks)
 }

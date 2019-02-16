@@ -8,10 +8,6 @@ use board::Board;
 fn perft_initial_position() {
     let mut board = Board::initial_position();
 
-    //board.play_move("e2e3");
-
-    board.print_possible_moves();
-
     let init_key = board.zobrist_hasher.zobrist_key;
 
     assert_eq!(board.perft(6), 119_060_324);
@@ -44,6 +40,11 @@ fn perft_kiwipete() {
 #[test]
 fn perft_sparse_board() {
     let mut board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ").unwrap();
+
+    //board.print_possible_moves();
+    //board.play_move("a5a4");
+
+    board.print_possible_moves();
 
     let init_key = board.zobrist_hasher.zobrist_key;
 
