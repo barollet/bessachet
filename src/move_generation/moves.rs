@@ -38,12 +38,12 @@ const QUEEN_CASTLE_FLAG: u16 = SPECIAL0_FLAG | SPECIAL1_FLAG;
 
 // [black castle, white castle]
 pub const KING_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
-    Move::raw_new(D1_SQUARE, B1_SQUARE).set_flags(KING_CASTLE_FLAG),
+    Move::raw_new(E8_SQUARE, G8_SQUARE).set_flags(KING_CASTLE_FLAG),
     Move::raw_new(E1_SQUARE, G1_SQUARE).set_flags(KING_CASTLE_FLAG),
 );
 
 pub const QUEEN_CASTLE_MOVES: BlackWhiteAttribute<Move> = BlackWhiteAttribute::new(
-    Move::raw_new(D1_SQUARE, F1_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
+    Move::raw_new(E8_SQUARE, C8_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
     Move::raw_new(E1_SQUARE, C1_SQUARE).set_flags(QUEEN_CASTLE_FLAG),
 );
 

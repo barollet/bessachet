@@ -638,7 +638,7 @@ impl<'a> PseudoLegalGenerator<'a> {
 
         // King
         // We generate king moves and castling if we are not engaged in check
-        if target_mask == BBWraper::empty() {
+        if target_mask != BBWraper::empty() {
             self.castling()
         } else {
             self

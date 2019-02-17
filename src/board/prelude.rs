@@ -14,14 +14,14 @@ pub trait AuxiliaryStruct<'a> {
 }
 
 // Castling type enum for indexing
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum CastlingSide {
     KING = 0,
     QUEEN,
     BOTH,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Mask {
     EMPTY = 0,
     CHECK,
@@ -31,7 +31,7 @@ pub fn squares_mask(side: CastlingSide, kind: Mask, color: Color) -> BitBoard {
     CASTLING_MASKS[side as usize][kind as usize][color]
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Rights {
     REMOVE = 0,
     ALLOWED,
@@ -41,13 +41,14 @@ pub fn rights_mask(side: CastlingSide, kind: Rights, color: Color) -> u8 {
     CASTLING_RIGHTS[side as usize][kind as usize][color]
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum RookSquare {
     ORIGIN = 0,
     DEST,
 }
 
 pub fn rook_square(side: CastlingSide, kind: RookSquare, color: Color) -> Square {
-    CASTLING_RIGHTS[side as usize][kind as usize][color]
+    ROOK_SQUARES[side as usize][kind as usize][color]
 }
 
 pub const CASTLING_MASKS: [[BlackWhiteAttribute<BitBoard>; 2]; 2] = [
@@ -63,7 +64,7 @@ pub const CASTLING_MASKS: [[BlackWhiteAttribute<BitBoard>; 2]; 2] = [
         // Empty
         BlackWhiteAttribute::new(0x7000000000000000, 0x0000000000000070),
         // Not in check
-        BlackWhiteAttribute::new(0x380000000000001c, 0x0000000000000038),
+        BlackWhiteAttribute::new(0x3800000000000000, 0x0000000000000038),
     ],
 ];
 

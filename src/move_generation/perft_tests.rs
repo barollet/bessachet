@@ -2,7 +2,8 @@
 // All perft results and positions are taken from
 // https://www.chessprogramming.org/Perft_Results
 
-use board::Board;
+use board::*;
+use utils::*;
 
 #[test]
 fn perft_initial_position() {
@@ -41,11 +42,6 @@ fn perft_kiwipete() {
 fn perft_sparse_board() {
     let mut board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ").unwrap();
 
-    //board.print_possible_moves();
-    //board.play_move("a5a4");
-
-    board.print_possible_moves();
-
     let init_key = board.zobrist_hasher.zobrist_key;
 
     assert_eq!(board.perft(7), 178_633_661);
@@ -68,6 +64,7 @@ fn perft_mirror() {
     let init_key = board.zobrist_hasher.zobrist_key;
 
     assert_eq!(board.perft(5), 15_833_292);
+    //assert_eq!(board.perft(4), 2145218);
     //assert_eq!(board.perft(4), 422_333);
     //assert_eq!(board.perft(3), 9467);
     //assert_eq!(board.perft(2), 264);
