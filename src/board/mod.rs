@@ -6,10 +6,10 @@ use evaluation::MaterialEvaluator;
 use hash_tables::utils::*;
 
 pub mod fen;
-pub mod prelude;
+pub mod utils;
 
 // Exports the prelude
-pub use self::prelude::*;
+pub use self::utils::*;
 
 // The board is represented as a set of bitboards
 // See: https://www.chessprogramming.org/Bitboards
@@ -93,14 +93,14 @@ impl Position {
         !self.occupied_squares()
     }
     pub fn king_square(&self, color: Color) -> Square {
-        Square::from(BBWraper(self[color] & self[Piece::KING]))
+        Square::from(BBWrapper(self[color] & self[Piece::KING]))
     }
     // Returns a bitboard of pawn candidates to capture en passant
     pub fn en_passant_candidates(&self) -> BitBoard {
         if let Some(square) = self.en_passant {
             EN_PASSANT_TABLE[self.side_to_move][square.get().file() as usize]
         } else {
-            BBWraper::empty()
+            BBWrapper::empty()
         }
     }
 }

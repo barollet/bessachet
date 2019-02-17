@@ -115,7 +115,7 @@ impl<'a> AuxiliaryStruct<'a> for MailBox88 {
     fn initialize(position: Self::Source) -> Self {
         let mut mailbox = [None; 64];
         for piece in &PIECES_LIST {
-            for square in BBWraper(position.pieces[*piece as usize]) {
+            for square in BBWrapper(position.pieces[*piece as usize]) {
                 mailbox[square as usize] = Some(*piece);
             }
         }
@@ -151,7 +151,7 @@ impl Position {
     pub fn empty_board() -> Position {
         Position {
             pieces: [0; 6],
-            occupancy: BlackWhiteAttribute::new(BBWraper::empty(), BBWraper::empty()),
+            occupancy: BlackWhiteAttribute::new(BBWrapper::empty(), BBWrapper::empty()),
             en_passant: None,
             castling_rights: 0b1111,
             side_to_move: WHITE,

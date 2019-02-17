@@ -20,14 +20,14 @@ extern crate enum_primitive;
 extern crate lazy_static;
 extern crate array_init;
 
+/// Primitive types for the engine
+#[macro_use]
+pub mod types;
 mod board;
 mod evaluation;
 mod hash_tables;
-#[macro_use]
 mod move_generation;
 mod search;
-/// Primitive types for the engine
-pub mod types;
 
 use board::Board;
 

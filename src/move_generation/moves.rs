@@ -7,7 +7,7 @@ use types::*;
 
 use enum_primitive::FromPrimitive;
 
-use board::prelude::*;
+use board::*;
 
 // An ExtendedMove is a 64 bits word following more or the less the extended
 // representation in https://www.chessprogramming.org/Encoding_Moves

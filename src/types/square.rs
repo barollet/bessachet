@@ -136,15 +136,6 @@ impl SquareExt for Square {
     }
 }
 
-// SqWrapper implements fmt::Display so we can use it to print a given square
-/// Helper to pretty print `Square`s
-#[macro_export]
-macro_rules! print_square {
-    ($square: expr) => {
-        SqWrapper($square)
-    };
-}
-
 use std::fmt;
 
 impl fmt::Display for SqWrapper {

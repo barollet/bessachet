@@ -5,7 +5,7 @@ use std::ptr;
 
 use self::init_magic::*;
 pub use self::moves::*;
-use board::prelude::*;
+use board::*;
 use std::convert::From;
 
 use types::*;
@@ -137,7 +137,7 @@ impl<'a> AuxiliaryStruct<'a> for MoveGenHelper {
         let mut mgh = MoveGenHelper {
             pinned_pieces: [(0, 0); 8],
             number_of_pinned_pieces: 0,
-            free_pieces: BBWraper::full(),
+            free_pieces: BBWrapper::full(),
             checkers: [0; 2],
             number_of_checkers: 0,
         };
@@ -196,10 +196,10 @@ impl MoveGenHelper {
 
         // get the pinned piece should be reduced to a single square or empty
         let pinned: BitBoard = pin_liberties & position[position.side_to_move];
-        if pinned != BBWraper::empty() {
-            let pinned = Square::from(BBWraper(pinned));
+        if pinned != BBWrapper::empty() {
+            let pinned = Square::from(BBWrapper(pinned));
             self.push_pinned(pinned, pin_liberties.add_square(pinner));
-        } else if pin_liberties & position.occupied_squares() == BBWraper::empty() {
+        } else if pin_liberties & position.occupied_squares() == BBWrapper::empty() {
             self.push_checker(pinner);
         }
     }
@@ -208,7 +208,7 @@ impl MoveGenHelper {
         let king_square = pos.king_square(pos.side_to_move);
         let opponent_color = !pos.side_to_move;
 
-        for piece_square in BBWraper((pos[piece] | pos[Piece::QUEEN]) & pos[opponent_color]) {
+        for piece_square in BBWrapper((pos[piece] | pos[Piece::QUEEN]) & pos[opponent_color]) {
             let xray_attack = xray_function(piece_square, pos.occupied_squares());
             if xray_attack.has_square(king_square) {
                 self.decide_pin_check(pos, piece_square, king_square);
@@ -224,11 +224,11 @@ impl MoveGenHelper {
         let king_square = pos.king_square(pos.side_to_move);
 
         let opponent_pawns = pos[opponent_color] & pos[Piece::PAWN];
-        for pawn_square in BBWraper(pawn_attack(king_square, pos.side_to_move) & opponent_pawns) {
+        for pawn_square in BBWrapper(pawn_attack(king_square, pos.side_to_move) & opponent_pawns) {
             self.push_checker(pawn_square)
         }
         let opponent_knights = pos[opponent_color] & pos[Piece::KNIGHT];
-        for knight_square in BBWraper(knight_attack(king_square) & opponent_knights) {
+        for knight_square in BBWrapper(knight_attack(king_square) & opponent_knights) {
             self.push_checker(knight_square);
         }
     }
@@ -491,7 +491,7 @@ impl<'a> PseudoLegalGenerator<'a> {
     }
 
     fn all_moves(&mut self) -> PseudoLegalMoveList {
-        self.all_moves_with_target(BBWraper::full()).escape_king()
+        self.all_moves_with_target(BBWrapper::full()).escape_king()
     }
 
     // Generate only moves that ends in the target mask
@@ -530,7 +530,7 @@ impl<'a> PseudoLegalGenerator<'a> {
         self.push_pawn_attack(origin_pawns, double_pushed, DOUBLE_PUSH_FLAG, player_color);
         // En passant (we don't need the target mask as en passant capture will be checked
         // afterward anyway)
-        for pawn in BBWraper(self.board.position.en_passant_candidates() & pawns) {
+        for pawn in BBWrapper(self.board.position.en_passant_candidates() & pawns) {
             let en_passant_square = self.board.position.en_passant.unwrap();
             let en_passant_dest = en_passant_square.get().forward(player_color);
             if self.board[en_passant_dest].is_none() {
@@ -540,7 +540,7 @@ impl<'a> PseudoLegalGenerator<'a> {
 
         // Knights
         let knights = player_pieces & self.board.position[Piece::KNIGHT] & free_pieces;
-        for knight in BBWraper(knights) {
+        for knight in BBWrapper(knights) {
             self.push_attack(knight, knight_attack(knight) & target_mask);
         }
 
@@ -550,7 +550,7 @@ impl<'a> PseudoLegalGenerator<'a> {
                 let pieces = player_pieces
                     & (self.board.position[$piece] | self.board.position[Piece::QUEEN])
                     & self.board.move_gen.free_pieces;
-                for piece in BBWraper(pieces) {
+                for piece in BBWrapper(pieces) {
                     self.push_attack(
                         piece,
                         $attack_function(piece, occupied_squares) & target_mask,
@@ -591,7 +591,7 @@ impl<'a> PseudoLegalGenerator<'a> {
                         }
                     }
                     // Capture
-                    for dest in BBWraper(
+                    for dest in BBWrapper(
                         pawn_attack(square, player_color)
                             & opponent_pieces
                             & liberties
@@ -637,7 +637,7 @@ impl<'a> PseudoLegalGenerator<'a> {
 
         // King
         // We generate king moves and castling if we are not engaged in check
-        if target_mask != BBWraper::empty() {
+        if target_mask != BBWrapper::empty() {
             self.castling()
         } else {
             self
@@ -664,7 +664,7 @@ impl<'a> PseudoLegalGenerator<'a> {
             // none of the squares on the way are occupied
         && (self.board.position.occupied_squares() & squares_mask(side, Mask::EMPTY, color) == 0)
         // squares crossed by the king are not in check
-        && (BBWraper(squares_mask(side, Mask::CHECK, color)).all(|square| !self.board.is_in_check(square, color)))
+        && (BBWrapper(squares_mask(side, Mask::CHECK, color)).all(|square| !self.board.is_in_check(square, color)))
     }
 }
 
@@ -691,18 +691,18 @@ impl<'a> PseudoLegalGenerator<'a> {
         let opponent_color = !self.board.position.side_to_move;
         let opponent_pieces = self.board.position[opponent_color];
         // Captures
-        for square in BBWraper(attack & opponent_pieces) {
+        for square in BBWrapper(attack & opponent_pieces) {
             self.push_move_internal(Move::new_with_flags(origin_square, square, CAPTURE_FLAG));
         }
         // Quiet moves
-        for square in BBWraper(attack & self.board.position.empty_squares()) {
+        for square in BBWrapper(attack & self.board.position.empty_squares()) {
             self.push_move_internal(Move::new(origin_square, square));
         }
     }
 
     // Push a pawn attack of the given color with the given flag taking care of promotions
     fn push_pawn_attack(&mut self, origin: BitBoard, attack: BitBoard, flag: u16, color: Color) {
-        for (origin, dest) in BBWraper(origin).zip(BBWraper(attack)) {
+        for (origin, dest) in BBWrapper(origin).zip(BBWrapper(attack)) {
             if PROMOTION_LINE[color].has_square(dest) {
                 self.push_promotions_from_move(Move::new_with_flags(origin, dest, flag))
             } else {
@@ -730,10 +730,7 @@ impl Board {
                 mov.origin_square() == origin_square && mov.destination_square() == dest_square
             })
             .map(|mov| self.make(mov))
-            .expect(&format!(
-                "Move not found {}{}{}{}",
-                origin_file, origin_row, dest_file, dest_row
-            ));
+            .unwrap_or_else(|| panic!("Move not found {}", Move::new(origin_square, dest_square),));
     }
 
     #[allow(dead_code)]
@@ -769,8 +766,8 @@ impl Board {
 }
 
 fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
-    let mut white_en_passant_candidates = [BBWraper::empty(); 8];
-    for square in BBWraper(ROW_5) {
+    let mut white_en_passant_candidates = [BBWrapper::empty(); 8];
+    for square in BBWrapper(ROW_5) {
         if square.file() != 0 {
             white_en_passant_candidates[square.file() as usize].add_square(square.left());
         }
@@ -786,9 +783,9 @@ fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
 }
 
 fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
-    let mut white_pawn_attacks = [BBWraper::empty(); 64]; // First and last row while remain empty
+    let mut white_pawn_attacks = [BBWrapper::empty(); 64]; // First and last row while remain empty
 
-    for square in BBWraper(SQUARES & !ROW_8) {
+    for square in BBWrapper(SQUARES & !ROW_8) {
         if !FILE_A.has_square(square) {
             white_pawn_attacks[square as usize].add_square(square.forward_left());
         }
@@ -799,7 +796,7 @@ fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
 
     let mut black_pawn_attacks: [BitBoard; 64] =
         array_init::array_init(|i| white_pawn_attacks[i] >> 16);
-    for square in BBWraper(ROW_8) {
+    for square in BBWrapper(ROW_8) {
         black_pawn_attacks[square as usize] =
             black_pawn_attacks[square.forward(BLACK) as usize] << 8;
     }
@@ -808,7 +805,7 @@ fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
 }
 
 fn generate_knight_attacks() -> AttackTable {
-    let mut knight_attacks = [BBWraper::empty(); 64];
+    let mut knight_attacks = [BBWrapper::empty(); 64];
 
     let knight_moves = [
         (1, 2),
@@ -839,7 +836,7 @@ fn generate_knight_attacks() -> AttackTable {
 }
 
 fn generate_king_attacks() -> AttackTable {
-    let mut king_attacks = [BBWraper::empty(); 64];
+    let mut king_attacks = [BBWrapper::empty(); 64];
 
     let king_moves = [
         (1, 1),

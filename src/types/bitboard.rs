@@ -9,7 +9,7 @@ use types::file;
 
 pub type BitBoard = u64;
 /// A wrapper for conversion, iteration and display purpose
-pub struct BBWraper(pub BitBoard);
+pub struct BBWrapper(pub BitBoard);
 
 // Some constants declaration for rows and files
 pub const ROW_1: BitBoard = 0xff;
@@ -34,7 +34,7 @@ pub const FILES: [BitBoard; 8] = [
     FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
 ];
 
-impl BBWraper {
+impl BBWrapper {
     /// Returns a `BitBoard` with the feature set to false on all square.
     pub const fn empty() -> BitBoard {
         0
@@ -72,7 +72,7 @@ impl BitBoardExt for BitBoard {
     fn pop_lsb_as_square(&mut self) -> Square {
         let singly_populated_bitboard = *self & self.overflowing_neg().0;
         *self ^= singly_populated_bitboard;
-        Square::from(BBWraper(singly_populated_bitboard))
+        Square::from(BBWrapper(singly_populated_bitboard))
     }
 
     /// Returns true if the given `BitBoard` contains the given `Square`.
@@ -129,18 +129,9 @@ impl BitBoardExt for BitBoard {
     }
 }
 
-/// A macro to iterate over a `BitBoard`
-// BBWraper impements Iterator so we can return it.
-#[macro_export]
-macro_rules! bb_iter {
-    ($bb: expr) => {
-        BBWraper($bb)
-    };
-}
-
 // Iterates over the bits of the given bitboard and returns the associated Square
 // starting from the MSB
-impl Iterator for BBWraper {
+impl Iterator for BBWrapper {
     type Item = Square;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -152,11 +143,11 @@ impl Iterator for BBWraper {
     }
 }
 
-impl FusedIterator for BBWraper {}
+impl FusedIterator for BBWrapper {}
 
 use std::fmt;
 
-impl fmt::Debug for BBWraper {
+impl fmt::Debug for BBWrapper {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for i in (0..8).rev() {
             let line: u8 = ((self.0 >> (8 * i)) & 0xff) as u8;

@@ -10,7 +10,7 @@ const SLIDING_ATTACK_TABLE_SIZE: usize = 88507; // 651KB
 pub fn init_sliding_attack_tables() -> SlidingAttackTable {
     let mut attack_table: SlidingAttackTable = Vec::with_capacity(SLIDING_ATTACK_TABLE_SIZE);
     for _i in 0..SLIDING_ATTACK_TABLE_SIZE {
-        attack_table.push(BBWraper::empty());
+        attack_table.push(BBWrapper::empty());
     }
     for square in 0u8..64 {
         fill_attack_table(&mut attack_table, square);
@@ -137,20 +137,20 @@ fn direction_blockers_mask<F, G>(
 
 // Get a bishop attack on an empty board
 fn bishop_black_mask(square: u8) -> BitBoard {
-    !bishop_key(square, BBWraper::empty())
+    !bishop_key(square, BBWrapper::empty())
 }
 
 pub fn bishop_mask(square: u8) -> BitBoard {
-    bishop_key(square, BBWraper::empty())
+    bishop_key(square, BBWrapper::empty())
 }
 
 fn bishop_attack_on_empty_board(square: u8) -> BitBoard {
-    bishop_attack(square, BBWraper::empty())
+    bishop_attack(square, BBWrapper::empty())
 }
 
 // Get a bishop key for the given bitboard of blockers
 pub fn bishop_key(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BBWraper::empty();
+    let mut result: BitBoard = BBWrapper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -187,7 +187,7 @@ pub fn bishop_key(square: u8, blockers: BitBoard) -> BitBoard {
 
 // Get a bishop attack for the given bitboard of blockers
 pub fn bishop_attack(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BBWraper::empty();
+    let mut result: BitBoard = BBWrapper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -223,20 +223,20 @@ pub fn bishop_attack(square: u8, blockers: BitBoard) -> BitBoard {
 }
 
 fn rook_black_mask(square: u8) -> BitBoard {
-    !rook_key(square, BBWraper::empty())
+    !rook_key(square, BBWrapper::empty())
 }
 
 pub fn rook_mask(square: u8) -> BitBoard {
-    rook_key(square, BBWraper::empty())
+    rook_key(square, BBWrapper::empty())
 }
 
 fn rook_attack_empty_board(square: u8) -> BitBoard {
-    rook_attack(square, BBWraper::empty())
+    rook_attack(square, BBWrapper::empty())
 }
 
 // Get a rook key for magic table for the given bitboard of blockers
 pub fn rook_key(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BBWraper::empty();
+    let mut result: BitBoard = BBWrapper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -272,7 +272,7 @@ pub fn rook_key(square: u8, blockers: BitBoard) -> BitBoard {
 }
 
 pub fn rook_attack(square: u8, blockers: BitBoard) -> BitBoard {
-    let mut result: BitBoard = BBWraper::empty();
+    let mut result: BitBoard = BBWrapper::empty();
     let ij = coord_from_square(square);
 
     direction_blockers_mask(
@@ -308,7 +308,7 @@ pub fn rook_attack(square: u8, blockers: BitBoard) -> BitBoard {
 }
 
 pub fn index_to_key(index: usize, bits: u32, mut mask: BitBoard) -> BitBoard {
-    let mut result = BBWraper::empty();
+    let mut result = BBWrapper::empty();
     for i in 0..bits {
         let j = mask.pop_lsb_as_square();
         if index & (1 << i) != 0 {

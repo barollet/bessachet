@@ -1,4 +1,4 @@
-use board::prelude::*;
+use board::*;
 use evaluation::side_multiplier;
 use std::ops::{Index, IndexMut};
 use types::*;

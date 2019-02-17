@@ -15,7 +15,7 @@ pub use self::piece::*;
 pub use self::square::*;
 
 /// All the squares of the board
-pub const SQUARES: BitBoard = BBWraper::full();
+pub const SQUARES: BitBoard = BBWrapper::full();
 
 /// Returns the nth file (numbered from 0 for A to 7 for H)
 pub const fn file(number: u32) -> BitBoard {
@@ -29,8 +29,8 @@ impl From<SqWrapper> for BitBoard {
     }
 }
 
-impl From<BBWraper> for Square {
-    fn from(bitboard: BBWraper) -> Square {
+impl From<BBWrapper> for Square {
+    fn from(bitboard: BBWrapper) -> Square {
         bitboard.0.trailing_zeros() as Square
     }
 }

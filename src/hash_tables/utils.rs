@@ -1,6 +1,6 @@
 #![allow(clippy::unreadable_literal)]
 
-use board::prelude::*;
+use board::*;
 use types::*;
 
 // A Xoroshiro Pseudo random generator

@@ -1,22 +1,24 @@
-use board::prelude::*;
-use types::*;
+use board::*;
 
 impl Board {
+    /// Parse the given fen string into a `Board`.
+    /// The error handling is still very poor.
+    // TODO proper parser with nice error handling
     pub fn from_fen(fen_string: &str) -> Result<Self, &'static str> {
         let fen_parts: Vec<_> = fen_string.split_whitespace().collect();
         if fen_parts.len() < 4 || fen_parts.len() > 6 {
-            return Err("Invalid FEN string");
+            return Err("Too many FEN parts");
         }
 
         // Parsing position
         let piece_lines: Vec<_> = fen_parts[0].split('/').collect();
         if piece_lines.len() != 8 {
-            return Err("Invalid FEN string");
+            return Err("Too many board lines");
         }
         // Starting from the bottom line in white's perspective
         let mut occupancy: BlackWhiteAttribute<BitBoard> =
-            BlackWhiteAttribute::new(BBWraper::empty(), BBWraper::empty());
-        let mut piece_array = [BBWraper::empty(); 6];
+            BlackWhiteAttribute::new(BBWrapper::empty(), BBWrapper::empty());
+        let mut piece_array = [BBWrapper::empty(); 6];
         for (piece_line, i) in piece_lines.iter().rev().zip(0u32..) {
             let mut pos = 8;
             for c in piece_line.chars() {
@@ -34,7 +36,7 @@ impl Board {
                         'r' => Piece::ROOK,
                         'q' => Piece::QUEEN,
                         'k' => Piece::KING,
-                        _ => return Err("Invalid FEN string"),
+                        _ => return Err("Cannot parse piece"),
                     };
                     piece_array[new_piece as usize] |= singly_populated_bitboard;
 
@@ -62,7 +64,7 @@ impl Board {
                     'Q' => 0x2,
                     'k' => 0x4,
                     'q' => 0x8,
-                    _ => return Err("Invalid FEN string"),
+                    _ => return Err("Cannot parse castling rights"),
                 }
             }
         }
@@ -70,7 +72,7 @@ impl Board {
         let side_to_move = match fen_parts[1].chars().next() {
             Some('w') => WHITE,
             Some('b') => BLACK,
-            _ => return Err("Invalid FEN string"),
+            _ => return Err("Cannot parse side to move"),
         };
 
         // TODO halfmove clock and ply
