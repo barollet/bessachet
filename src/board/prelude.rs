@@ -3,7 +3,7 @@ use std::ops::{Index, IndexMut};
 
 pub use board::fen::*;
 pub use board::{Board, Position};
-use utils::*;
+use types::*;
 
 pub type MailBox88 = [Option<Piece>; 64];
 
@@ -145,7 +145,7 @@ impl Position {
             ), // White
             en_passant: None,
             castling_rights: 0b1111,
-            side_to_move: Color::WHITE,
+            side_to_move: WHITE,
         }
     }
     pub fn empty_board() -> Position {
@@ -154,7 +154,7 @@ impl Position {
             occupancy: BlackWhiteAttribute::new(BBWraper::empty(), BBWraper::empty()),
             en_passant: None,
             castling_rights: 0b1111,
-            side_to_move: Color::WHITE,
+            side_to_move: WHITE,
         }
     }
 }

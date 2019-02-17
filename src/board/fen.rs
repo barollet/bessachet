@@ -1,5 +1,5 @@
 use board::prelude::*;
-use utils::*;
+use types::*;
 
 impl Board {
     pub fn from_fen(fen_string: &str) -> Result<Self, &'static str> {
@@ -39,11 +39,7 @@ impl Board {
                     piece_array[new_piece as usize] |= singly_populated_bitboard;
 
                     // Occupancy
-                    let color = if c.is_ascii_lowercase() {
-                        Color::BLACK
-                    } else {
-                        Color::WHITE
-                    };
+                    let color = if c.is_ascii_lowercase() { BLACK } else { WHITE };
                     occupancy[color] |= singly_populated_bitboard;
                 }
             }
@@ -72,8 +68,8 @@ impl Board {
         }
 
         let side_to_move = match fen_parts[1].chars().next() {
-            Some('w') => Color::WHITE,
-            Some('b') => Color::BLACK,
+            Some('w') => WHITE,
+            Some('b') => BLACK,
             _ => return Err("Invalid FEN string"),
         };
 

@@ -1,7 +1,7 @@
 #![allow(clippy::unreadable_literal)]
 
 use board::prelude::*;
-use utils::*;
+use types::*;
 
 // A Xoroshiro Pseudo random generator
 // See: https://en.wikipedia.org/wiki/Xoroshiro128%2B
@@ -85,10 +85,10 @@ impl<'a> AuxiliaryStruct<'a> for ZobristHasher {
             // If there is a piece on the given square
             if let Some(piece) = mailbox[square as usize] {
                 // We look at its color and we update the key
-                let color = if position[Color::WHITE].has_square(square) {
-                    Color::WHITE
+                let color = if position[WHITE].has_square(square) {
+                    WHITE
                 } else {
-                    Color::BLACK
+                    BLACK
                 };
                 zobrist_key ^= ZOBRIST_CONSTS[zobrist_const_index(square, piece, color)];
                 if piece == Piece::PAWN {
@@ -99,7 +99,7 @@ impl<'a> AuxiliaryStruct<'a> for ZobristHasher {
         }
 
         // Side to move
-        if position.side_to_move == Color::BLACK {
+        if position.side_to_move == BLACK {
             zobrist_key ^= ZOBRIST_CONSTS[ZOBRIST_SIDE_TO_MOVE];
         }
         // Castling rights

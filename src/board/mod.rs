@@ -1,8 +1,9 @@
-use utils::*;
+use types::*;
 
 use move_generation::*;
 
 use evaluation::MaterialEvaluator;
+use hash_tables::utils::*;
 
 pub mod fen;
 pub mod prelude;
@@ -86,7 +87,7 @@ impl Board {
 
 impl Position {
     pub fn occupied_squares(&self) -> BitBoard {
-        self[Color::WHITE] | self[Color::BLACK]
+        self[WHITE] | self[BLACK]
     }
     pub fn empty_squares(&self) -> BitBoard {
         !self.occupied_squares()
@@ -168,7 +169,7 @@ impl Board {
     // If not the program can panic! or remain in an unconsistent state
     pub fn make(&mut self, mov: Move) -> ExtendedMove {
         let player_color = self.position.side_to_move;
-        let opponent_color = player_color.transpose();
+        let opponent_color = !player_color;
         let moved_piece = self[mov.origin_square()].unwrap();
 
         let old_caslting_rights = self.position.castling_rights;
@@ -194,18 +195,18 @@ impl Board {
                 ($color: expr, $side: expr) => {
                     if player_color == $color
                         && mov.destination_square()
-                            == rook_square($side, RookSquare::ORIGIN, $color.transpose())
+                            == rook_square($side, RookSquare::ORIGIN, !$color)
                     {
                         self.position.castling_rights &=
-                            rights_mask($side, Rights::REMOVE, $color.transpose());
+                            rights_mask($side, Rights::REMOVE, !$color);
                     }
                 };
             }
             if captured_piece == Piece::ROOK {
-                remove_castling_rights!(Color::WHITE, CastlingSide::QUEEN);
-                remove_castling_rights!(Color::WHITE, CastlingSide::KING);
-                remove_castling_rights!(Color::BLACK, CastlingSide::QUEEN);
-                remove_castling_rights!(Color::BLACK, CastlingSide::KING);
+                remove_castling_rights!(WHITE, CastlingSide::QUEEN);
+                remove_castling_rights!(WHITE, CastlingSide::KING);
+                remove_castling_rights!(BLACK, CastlingSide::QUEEN);
+                remove_castling_rights!(BLACK, CastlingSide::KING);
             }
 
             self.push_captured(captured_piece);
@@ -287,7 +288,7 @@ impl Board {
     // play state (and vice versa)
     pub fn unmake(&mut self, ext_mov: ExtendedMove) {
         // Move the piece back
-        let played_color = self.position.side_to_move.transpose();
+        let played_color = !self.position.side_to_move;
         let played_color_opponent = self.position.side_to_move;
         let mov = Move::from(ext_mov);
         let moved_piece = self[mov.destination_square()].unwrap();

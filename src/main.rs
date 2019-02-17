@@ -1,3 +1,19 @@
+/*!
+    # Docs
+
+    This is a project to test out `rustdoc`.
+
+    [Here is a link!](https://www.rust-lang.org)
+
+    ## Subheading
+
+    ```rust
+    fn foo() -> i32 {
+        1 + 1
+    }
+    ```
+*/
+
 #[macro_use]
 extern crate enum_primitive;
 #[macro_use]
@@ -10,12 +26,13 @@ mod hash_tables;
 #[macro_use]
 mod move_generation;
 mod search;
-mod utils;
+/// Primitive types for the engine
+pub mod types;
 
 use board::Board;
 
 use hash_tables::*;
-use utils::*;
+use types::*;
 
 fn main() {
     let _board = Board::initial_position();
@@ -28,9 +45,6 @@ fn main() {
     while let Some(tt_entry) = TRANSPOSITION_TABLE.probe(board.zobrist_hasher.zobrist_key) {
         println!("{}", tt_entry.best_move);
         board.make(tt_entry.best_move);
-        println!(
-            "value: {}",
-            board.material_evaluator.evaluation(Color::WHITE)
-        );
+        println!("value: {}", board.material_evaluator.evaluation(WHITE));
     }
 }

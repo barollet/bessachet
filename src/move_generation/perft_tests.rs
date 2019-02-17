@@ -3,7 +3,6 @@
 // https://www.chessprogramming.org/Perft_Results
 
 use board::*;
-use utils::*;
 
 #[test]
 fn perft_initial_position() {

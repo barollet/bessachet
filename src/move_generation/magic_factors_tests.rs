@@ -6,7 +6,7 @@ use move_generation::init_magic::{
     bishop_attack, bishop_mask, bishop_offset, index_to_key, rook_attack, rook_mask, rook_offset,
 };
 
-use utils::*;
+use types::*;
 
 fn key_iterator(mask: BitBoard) -> impl Iterator<Item = BitBoard> {
     let n = mask.count_ones();

@@ -1,7 +1,7 @@
 use board::prelude::*;
+use evaluation::side_multiplier;
 use std::ops::{Index, IndexMut};
-use utils::*;
-
+use types::*;
 
 // (3*3*3*2*9)^2 = 486^2 = 236,196 which is about 1/4 MB
 // NOTE: We use H.G. Muller's material index with a constant offset to avoid negative index
@@ -59,13 +59,13 @@ fn pre_compute_material_table() -> [i8; MATERIAL_TABLE_SIZE] {
     macro_rules! for_piece {
         ($piece:expr, $max_number:expr, $body:expr) => {
             for _i in 0..=$max_number {
-                material_evaluator.uncapture_piece($piece, Color::WHITE);
+                material_evaluator.uncapture_piece($piece, WHITE);
                 for _i in 0..=$max_number {
-                    material_evaluator.uncapture_piece($piece, Color::BLACK);
+                    material_evaluator.uncapture_piece($piece, BLACK);
                     $body;
-                    material_evaluator.capture_piece($piece, Color::BLACK);
+                    material_evaluator.capture_piece($piece, BLACK);
                 }
-                material_evaluator.capture_piece($piece, Color::WHITE);
+                material_evaluator.capture_piece($piece, WHITE);
             }
         };
     }
@@ -94,13 +94,13 @@ fn pre_compute_material_table() -> [i8; MATERIAL_TABLE_SIZE] {
 // Computes the material value for the given piece constellation
 // TODO: add something for bishop pair for example
 fn material_value(piece_populations: &PieceColorOffsets) -> i8 {
-    piece_populations[Color::WHITE]
+    piece_populations[WHITE]
         .iter()
         .zip(&PIECE_MATERIAL_VALUES)
         .fold(0, |acc, (population, value)| {
             acc + *population as i8 * value
         })
-        - piece_populations[Color::BLACK]
+        - piece_populations[BLACK]
             .iter()
             .zip(&PIECE_MATERIAL_VALUES)
             .fold(0, |acc, (population, value)| {
@@ -151,29 +151,29 @@ impl IndexMut<PieceColorPair> for MaterialEvaluator {
 impl<'a> AuxiliaryStruct<'a> for MaterialEvaluator {
     type Source = &'a Position;
     fn initialize(position: Self::Source) -> Self {
-        let n_white_rook = position.get_number_of(Piece::ROOK, Color::WHITE) as isize;
-        let n_black_rook = position.get_number_of(Piece::ROOK, Color::BLACK) as isize;
-        let n_white_bishop = position.get_number_of(Piece::BISHOP, Color::WHITE) as isize;
-        let n_black_bishop = position.get_number_of(Piece::BISHOP, Color::BLACK) as isize;
-        let n_white_knight = position.get_number_of(Piece::KNIGHT, Color::WHITE) as isize;
-        let n_black_knight = position.get_number_of(Piece::KNIGHT, Color::BLACK) as isize;
-        let n_white_queen = position.get_number_of(Piece::QUEEN, Color::WHITE) as isize;
-        let n_black_queen = position.get_number_of(Piece::QUEEN, Color::BLACK) as isize;
-        let n_white_pawn = position.get_number_of(Piece::PAWN, Color::WHITE) as isize;
-        let n_black_pawn = position.get_number_of(Piece::PAWN, Color::BLACK) as isize;
+        let n_white_rook = position.get_number_of(Piece::ROOK, WHITE) as isize;
+        let n_black_rook = position.get_number_of(Piece::ROOK, BLACK) as isize;
+        let n_white_bishop = position.get_number_of(Piece::BISHOP, WHITE) as isize;
+        let n_black_bishop = position.get_number_of(Piece::BISHOP, BLACK) as isize;
+        let n_white_knight = position.get_number_of(Piece::KNIGHT, WHITE) as isize;
+        let n_black_knight = position.get_number_of(Piece::KNIGHT, BLACK) as isize;
+        let n_white_queen = position.get_number_of(Piece::QUEEN, WHITE) as isize;
+        let n_black_queen = position.get_number_of(Piece::QUEEN, BLACK) as isize;
+        let n_white_pawn = position.get_number_of(Piece::PAWN, WHITE) as isize;
+        let n_black_pawn = position.get_number_of(Piece::PAWN, BLACK) as isize;
 
         MaterialEvaluator {
             table_index: 1838 // Constant offset to avoid negative indexes
-                + INDEX_OFFSETS[(Piece::ROOK, Color::WHITE)] * n_white_rook
-                + INDEX_OFFSETS[(Piece::ROOK, Color::BLACK)] * n_black_rook
-                + INDEX_OFFSETS[(Piece::BISHOP, Color::WHITE)] * n_white_bishop
-                + INDEX_OFFSETS[(Piece::BISHOP, Color::BLACK)] * n_black_bishop
-                + INDEX_OFFSETS[(Piece::KNIGHT, Color::WHITE)] * n_white_knight
-                + INDEX_OFFSETS[(Piece::KNIGHT, Color::BLACK)] * n_black_knight
-                + INDEX_OFFSETS[(Piece::QUEEN, Color::WHITE)] * n_white_queen
-                + INDEX_OFFSETS[(Piece::QUEEN, Color::BLACK)] * n_black_queen
-                + INDEX_OFFSETS[(Piece::PAWN, Color::WHITE)] * n_white_pawn
-                + INDEX_OFFSETS[(Piece::PAWN, Color::BLACK)] * n_black_pawn,
+                + INDEX_OFFSETS[(Piece::ROOK, WHITE)] * n_white_rook
+                + INDEX_OFFSETS[(Piece::ROOK, BLACK)] * n_black_rook
+                + INDEX_OFFSETS[(Piece::BISHOP, WHITE)] * n_white_bishop
+                + INDEX_OFFSETS[(Piece::BISHOP, BLACK)] * n_black_bishop
+                + INDEX_OFFSETS[(Piece::KNIGHT, WHITE)] * n_white_knight
+                + INDEX_OFFSETS[(Piece::KNIGHT, BLACK)] * n_black_knight
+                + INDEX_OFFSETS[(Piece::QUEEN, WHITE)] * n_white_queen
+                + INDEX_OFFSETS[(Piece::QUEEN, BLACK)] * n_black_queen
+                + INDEX_OFFSETS[(Piece::PAWN, WHITE)] * n_white_pawn
+                + INDEX_OFFSETS[(Piece::PAWN, BLACK)] * n_black_pawn,
 
             // NOTE: White is index 1 and Black index 0, see utils/board_utils.rs
             // See also in utils/board_utils the piece indexes
@@ -220,7 +220,7 @@ impl MaterialEvaluator {
     }
 
     pub fn evaluation(&self, side_to_move: Color) -> f32 {
-        let side_multiplier = side_to_move.side_multiplier();
+        let side_multiplier = side_multiplier(side_to_move);
         if self.valid_index {
             side_multiplier * f32::from(MATERIAL_TABLE[self.table_index as usize])
         } else {

@@ -1,8 +1,10 @@
-mod pawn_hash_table;
-mod transposition_table;
+pub mod pawn_hash_table;
+pub mod transposition_table;
+pub mod utils;
 
 pub use self::pawn_hash_table::*;
 pub use self::transposition_table::*;
+pub use self::utils::*;
 
 // TODO write generic code for hash tables
 

@@ -2,7 +2,9 @@ use board::Board;
 
 use hash_tables::*;
 
-use utils::*;
+use types::*;
+
+use evaluation::side_multiplier;
 
 // Indexed by file and return adjacent files
 const ISOLATION_MASK: [(BitBoard, BitBoard); 6] = [
@@ -28,7 +30,7 @@ const BACKWARD_MASK: [(BitBoard, BitBoard); 8] = [
 impl Board {
     pub fn pawn_structure_evaluation(&self) -> f32 {
         let key = self.zobrist_hasher.zobrist_pawn_key;
-        let side_multiplier = self.position.side_to_move.side_multiplier();
+        let side_multiplier = side_multiplier(self.position.side_to_move);
         if let Some(pawn_entry) = unsafe { PAWN_TABLE.probe(key) } {
             // Table hit
             side_multiplier * f32::from(pawn_entry.evaluation)
@@ -49,18 +51,17 @@ impl Board {
     fn doubled_pawns_score(&self) -> f32 {
         let position = &self.position;
         -0.5 * FILES.iter().fold(0.0, |acc, file| {
-            acc + (position[Piece::PAWN] & position[Color::WHITE] & *file).population() as f32 - 1.0
+            acc + (position[Piece::PAWN] & position[WHITE] & *file).population() as f32 - 1.0
         }) + 0.5
             * FILES.iter().fold(0.0, |acc, file| {
-                acc + (position[Piece::PAWN] & position[Color::BLACK] & *file).population() as f32
-                    - 1.0
+                acc + (position[Piece::PAWN] & position[BLACK] & *file).population() as f32 - 1.0
             })
     }
 
     fn isolated_pawns_score(&self) -> f32 {
         let position = &self.position;
         -0.5 * ISOLATION_MASK.iter().fold(0, |acc, (mask, file)| {
-            acc + if (position[Piece::PAWN] & position[Color::WHITE] & *mask).population() == 0 {
+            acc + if (position[Piece::PAWN] & position[WHITE] & *mask).population() == 0 {
                 file.population()
             } else {
                 0
@@ -68,9 +69,7 @@ impl Board {
         }) as f32
             + 0.5
                 * ISOLATION_MASK.iter().fold(0, |acc, (mask, file)| {
-                    acc + if (position[Piece::PAWN] & position[Color::BLACK] & *mask).population()
-                        == 0
-                    {
+                    acc + if (position[Piece::PAWN] & position[BLACK] & *mask).population() == 0 {
                         file.population()
                     } else {
                         0

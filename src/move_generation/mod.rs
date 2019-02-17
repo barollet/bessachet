@@ -7,7 +7,8 @@ use self::init_magic::*;
 pub use self::moves::*;
 use board::prelude::*;
 use std::convert::From;
-use utils::*;
+
+use types::*;
 
 // Perft tests for move generation, see move_generation/perft_tests.rs
 #[cfg(test)]
@@ -176,7 +177,7 @@ impl MoveGenHelper {
     fn push_pinned(&mut self, pinned_square: Square, liberties: BitBoard) {
         self.pinned_pieces[self.number_of_pinned_pieces] = (pinned_square, liberties);
         self.number_of_pinned_pieces += 1;
-        self.free_pieces = self.free_pieces.remove_square(pinned_square);
+        self.free_pieces.remove_square(pinned_square);
     }
     // Push a new checker
     fn push_checker(&mut self, checker_square: Square) {
@@ -191,7 +192,7 @@ impl MoveGenHelper {
     fn decide_pin_check(&mut self, position: &Position, pinner: Square, target: Square) {
         // including is for overlapping with both target and pinner square
         // the target square is removed afterward
-        let pin_liberties: BitBoard = square_mask_between(pinner, target);
+        let mut pin_liberties: BitBoard = square_mask_between(pinner, target);
 
         // get the pinned piece should be reduced to a single square or empty
         let pinned: BitBoard = pin_liberties & position[position.side_to_move];
@@ -205,7 +206,7 @@ impl MoveGenHelper {
 
     fn compute_pinned_pieces(&mut self, pos: &Position, piece: Piece, xray_function: XrayFunction) {
         let king_square = pos.king_square(pos.side_to_move);
-        let opponent_color = pos.side_to_move.transpose();
+        let opponent_color = !pos.side_to_move;
 
         for piece_square in BBWraper((pos[piece] | pos[Piece::QUEEN]) & pos[opponent_color]) {
             let xray_attack = xray_function(piece_square, pos.occupied_squares());
@@ -218,7 +219,7 @@ impl MoveGenHelper {
     // Compute only checks by knights and pawns as bishop, rooks and queens are already done by
     // pinners computation
     fn compute_pawn_knight_checkers(&mut self, pos: &Position) {
-        let opponent_color = pos.side_to_move.transpose();
+        let opponent_color = !pos.side_to_move;
 
         let king_square = pos.king_square(pos.side_to_move);
 
@@ -399,7 +400,7 @@ impl Board {
     // A piece of the given color on the given square would be in check
     fn is_in_check(&self, square: Square, color: Color) -> bool {
         // We use the super piece method
-        let opponent_color = color.transpose();
+        let opponent_color = !color;
         let opponent_pieces = self.position[opponent_color];
 
         let occupancy = self.position.occupied_squares();
@@ -421,7 +422,7 @@ impl Board {
     pub fn is_king_checked(&self) -> bool {
         let player_color = self.position.side_to_move;
         let king_square = self.position.king_square(player_color);
-        self.is_in_check(king_square, player_color.transpose())
+        self.is_in_check(king_square, !player_color)
     }
 }
 
@@ -497,7 +498,7 @@ impl<'a> PseudoLegalGenerator<'a> {
     fn all_moves_with_target(&mut self, target_mask: BitBoard) -> &mut PseudoLegalGenerator<'a> {
         let player_color = self.board.position.side_to_move;
         let player_pieces = self.board.position[player_color];
-        let opponent_pieces = self.board.position[player_color.transpose()];
+        let opponent_pieces = self.board.position[!player_color];
 
         let free_pieces = self.board.move_gen.free_pieces;
         let empty_squares = self.board.position.empty_squares();
@@ -507,27 +508,25 @@ impl<'a> PseudoLegalGenerator<'a> {
         // Push
 
         let simple_pushed_pawns = pawns.push(player_color) & empty_squares & target_mask;
-        let origin_pawns = simple_pushed_pawns.push(player_color.transpose()); // Push back
+        let origin_pawns = simple_pushed_pawns.push(!player_color); // Push back
         self.push_pawn_attack(origin_pawns, simple_pushed_pawns, NO_FLAG, player_color);
 
         // Capture left
         let captures_dest =
             (pawns & !FILE_A).left_capture(player_color) & opponent_pieces & target_mask;
-        let captures_origin = captures_dest.right_capture(player_color.transpose());
+        let captures_origin = captures_dest.right_capture(!player_color);
         self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
         // Capture right
         let captures_dest =
             (pawns & !FILE_H).right_capture(player_color) & opponent_pieces & target_mask;
-        let captures_origin = captures_dest.left_capture(player_color.transpose());
+        let captures_origin = captures_dest.left_capture(!player_color);
         self.push_pawn_attack(captures_origin, captures_dest, CAPTURE_FLAG, player_color);
         // Double push
         let double_pushed = (pawns.push(player_color) & empty_squares).push(player_color)
             & empty_squares
             & EN_PASSANT_LINE[player_color]
             & target_mask;
-        let origin_pawns = double_pushed
-            .push(player_color.transpose())
-            .push(player_color.transpose());
+        let origin_pawns = double_pushed.push(!player_color).push(!player_color);
         self.push_pawn_attack(origin_pawns, double_pushed, DOUBLE_PUSH_FLAG, player_color);
         // En passant (we don't need the target mask as en passant capture will be checked
         // afterward anyway)
@@ -689,7 +688,7 @@ impl<'a> PseudoLegalGenerator<'a> {
 
     // Helper for pieces that can perform captures and quiet moves at the same time
     fn push_attack(&mut self, origin_square: Square, attack: BitBoard) {
-        let opponent_color = self.board.position.side_to_move.transpose();
+        let opponent_color = !self.board.position.side_to_move;
         let opponent_pieces = self.board.position[opponent_color];
         // Captures
         for square in BBWraper(attack & opponent_pieces) {
@@ -773,12 +772,10 @@ fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
     let mut white_en_passant_candidates = [BBWraper::empty(); 8];
     for square in BBWraper(ROW_5) {
         if square.file() != 0 {
-            white_en_passant_candidates[square.file() as usize] =
-                white_en_passant_candidates[square.file() as usize].add_square(square.left());
+            white_en_passant_candidates[square.file() as usize].add_square(square.left());
         }
         if square.file() != 7 {
-            white_en_passant_candidates[square.file() as usize] =
-                white_en_passant_candidates[square.file() as usize].add_square(square.right());
+            white_en_passant_candidates[square.file() as usize].add_square(square.right());
         }
     }
 
@@ -793,12 +790,10 @@ fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
 
     for square in BBWraper(SQUARES & !ROW_8) {
         if !FILE_A.has_square(square) {
-            white_pawn_attacks[square as usize] =
-                white_pawn_attacks[square as usize].add_square(square.forward_left());
+            white_pawn_attacks[square as usize].add_square(square.forward_left());
         }
         if !FILE_H.has_square(square) {
-            white_pawn_attacks[square as usize] =
-                white_pawn_attacks[square as usize].add_square(square.forward_right());
+            white_pawn_attacks[square as usize].add_square(square.forward_right());
         }
     }
 
@@ -806,7 +801,7 @@ fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
         array_init::array_init(|i| white_pawn_attacks[i] >> 16);
     for square in BBWraper(ROW_8) {
         black_pawn_attacks[square as usize] =
-            black_pawn_attacks[square.forward(Color::BLACK) as usize] << 8;
+            black_pawn_attacks[square.forward(BLACK) as usize] << 8;
     }
 
     BlackWhiteAttribute::new(black_pawn_attacks, white_pawn_attacks)
@@ -832,7 +827,7 @@ fn generate_knight_attacks() -> AttackTable {
 
         for (i, j) in &knight_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard = attack_bitboard.add_square(SqWrapper::from_file_rank(
+                attack_bitboard.add_square(SqWrapper::from_file_rank(
                     (file + i) as u8,
                     (rank + j) as u8,
                 ));
@@ -863,7 +858,7 @@ fn generate_king_attacks() -> AttackTable {
 
         for (i, j) in &king_moves {
             if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                *attack_bitboard = attack_bitboard.add_square(SqWrapper::from_file_rank(
+                attack_bitboard.add_square(SqWrapper::from_file_rank(
                     (file + i) as u8,
                     (rank + j) as u8,
                 ));

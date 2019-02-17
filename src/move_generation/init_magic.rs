@@ -1,7 +1,7 @@
 use std::ptr;
 
 use move_generation::{MagicEntry, SlidingAttackTable, SLIDING_ATTACK_TABLE};
-use utils::*;
+use types::*;
 
 // Note: see the magic factors at the end of this file
 //

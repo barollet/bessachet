@@ -3,7 +3,7 @@
 use std::convert::{From, Into};
 use std::fmt;
 
-use utils::*;
+use types::*;
 
 use enum_primitive::FromPrimitive;
 
