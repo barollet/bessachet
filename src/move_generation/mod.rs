@@ -1,10 +1,11 @@
 pub mod init_magic;
 pub mod moves;
+pub mod checks_pins;
+mod piece_attacks;
 
-use std::ptr;
-
-use self::init_magic::*;
 pub use self::moves::*;
+pub use self::checks_pins::*;
+pub use self::piece_attacks::*;
 use board::*;
 use std::convert::From;
 
@@ -27,220 +28,8 @@ mod magic_factors_tests;
 // See: https://www.chessprogramming.org/Magic_Bitboards
 //
 // See move_generation/init_magic.rs for impl block with initiatlization
-pub struct MagicEntry {
-    magic: u64,
-    table: &'static BitBoard, // static reference coerced to a pointer
-    black_mask: BitBoard,
-    postmask: BitBoard,
-}
 
-type SlidingAttackTable = Vec<BitBoard>; // Heap allocated table
-type AttackTable = [BitBoard; 64];
-
-// NOTE: lazy statics uses an atomic check for each access, maybe at some point we will need to
-// remove this and come back to classical static mut or something else to make it faster
-lazy_static! {
-    pub static ref BISHOP_ATTACK_TABLE: [MagicEntry; 64] = init_magic_entries(MagicEntry::bishop_magic);
-    pub static ref ROOK_ATTACK_TABLE: [MagicEntry; 64] = init_magic_entries(MagicEntry::rook_magic);
-
-    // TODO better magic table with none naive arrangement and better magic factors to reduce size
-    pub static ref SLIDING_ATTACK_TABLE: SlidingAttackTable = init_sliding_attack_tables();
-
-    static ref KNIGHT_ATTACK_TABLE: AttackTable = generate_knight_attacks(); // 512 bytes
-    static ref KING_ATTACK_TABLE: AttackTable = generate_king_attacks(); // 512 bytes
-    static ref PAWN_ATTACK_TABLE: BlackWhiteAttribute<AttackTable> = generate_pawn_attacks(); // 2*512 bytes
-
-    // returns the BitBoard of candidates to capture and en passant target on the given file
-    pub static ref EN_PASSANT_TABLE: BlackWhiteAttribute<[BitBoard; 8]> = generate_en_passant_table(); // 2*64 bytes 8*8 bitboards
-}
-
-const EN_PASSANT_LINE: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_5, ROW_4);
-const STARTING_ROW: BlackWhiteAttribute<BitBoard> = BlackWhiteAttribute::new(ROW_7, ROW_2);
-
-fn sliding_attack(
-    magic_entry: &MagicEntry,
-    occupancy: BitBoard,
-    offset_function: fn(BitBoard, u64) -> usize,
-) -> BitBoard {
-    let table_pointer: *const BitBoard = magic_entry.table;
-
-    let hash_key = occupancy | magic_entry.black_mask;
-    let table_offset = offset_function(hash_key, magic_entry.magic);
-
-    unsafe { ptr::read(table_pointer.add(table_offset)) & magic_entry.postmask }
-}
-
-pub fn rook_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &ROOK_ATTACK_TABLE[usize::from(square)];
-    sliding_attack(magic_entry, occupancy, rook_offset)
-}
-
-pub fn bishop_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &BISHOP_ATTACK_TABLE[usize::from(square)];
-    sliding_attack(magic_entry, occupancy, bishop_offset)
-}
-
-fn knight_attack(square: Square) -> BitBoard {
-    KNIGHT_ATTACK_TABLE[square as usize]
-}
-
-fn king_attack(square: Square) -> BitBoard {
-    KING_ATTACK_TABLE[square as usize]
-}
-
-fn pawn_attack(square: Square, color: Color) -> BitBoard {
-    PAWN_ATTACK_TABLE[color][square as usize]
-}
-
-// Returns the xray attack of the given square for pinned pieces
-// See: https://www.chessprogramming.org/X-ray_Attacks_(Bitboards)
-fn xray_attack(
-    magic_entry: &MagicEntry,
-    occupancy: BitBoard,
-    offset_function: fn(BitBoard, u64) -> usize,
-) -> BitBoard {
-    let attack = sliding_attack(magic_entry, occupancy, offset_function);
-    let occupancy = occupancy & !attack;
-    sliding_attack(magic_entry, occupancy, offset_function)
-}
-
-type XrayFunction = fn(Square, BitBoard) -> BitBoard;
-
-fn rook_xray_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &ROOK_ATTACK_TABLE[usize::from(square)];
-    xray_attack(magic_entry, occupancy, rook_offset)
-}
-
-fn bishop_xray_attack(square: Square, occupancy: BitBoard) -> BitBoard {
-    let magic_entry = &BISHOP_ATTACK_TABLE[usize::from(square)];
-    xray_attack(magic_entry, occupancy, bishop_offset)
-}
-
-#[derive(Clone)]
-pub struct MoveGenHelper {
-    // We hold the squares that are pinned and no more than 2 pieces can be pinned on the same
-    // direction, there is also the bitboard of the liberties of the pinned piece (to be
-    // intersected with the actual moves of the piece)
-    pinned_pieces: [(Square, BitBoard); 8],
-    number_of_pinned_pieces: usize, // pinners stack indexes
-
-    free_pieces: BitBoard, // A global pin mask to quickly get if a piece is pinned or free
-
-    // checkers
-    checkers: [Square; 2],
-    number_of_checkers: usize,
-}
-
-impl<'a> AuxiliaryStruct<'a> for MoveGenHelper {
-    type Source = &'a Position;
-    fn initialize(position: Self::Source) -> Self {
-        let mut mgh = MoveGenHelper {
-            pinned_pieces: [(0, 0); 8],
-            number_of_pinned_pieces: 0,
-            free_pieces: BBWrapper::full(),
-            checkers: [0; 2],
-            number_of_checkers: 0,
-        };
-
-        // Pinned pieces and checks by sliders
-        mgh.compute_pinned_pieces(&position, Piece::BISHOP, bishop_xray_attack);
-        mgh.compute_pinned_pieces(&position, Piece::ROOK, rook_xray_attack);
-
-        mgh.compute_pawn_knight_checkers(&position);
-
-        mgh
-    }
-}
-
-struct PinnedPiecesIterator<'a> {
-    move_gen: &'a MoveGenHelper,
-    iteration_index: usize,
-}
-
-// This iterates over the pinned pieces
-impl<'a> Iterator for PinnedPiecesIterator<'a> {
-    type Item = (Square, BitBoard);
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.iteration_index < self.move_gen.number_of_pinned_pieces {
-            let item = self.move_gen.pinned_pieces[self.iteration_index];
-            self.iteration_index += 1;
-            Some(item)
-        } else {
-            None
-        }
-    }
-}
-
-// Structure manipulation
-impl MoveGenHelper {
-    // Push a new pinned piece with its liberties
-    fn push_pinned(&mut self, pinned_square: Square, liberties: BitBoard) {
-        self.pinned_pieces[self.number_of_pinned_pieces] = (pinned_square, liberties);
-        self.number_of_pinned_pieces += 1;
-        self.free_pieces.remove_square(pinned_square);
-    }
-    // Push a new checker
-    fn push_checker(&mut self, checker_square: Square) {
-        self.checkers[self.number_of_checkers] = checker_square;
-        self.number_of_checkers += 1;
-    }
-}
-
-impl MoveGenHelper {
-    // Gets the pinned piece between the pinner and target squares
-    // If this is empty, it means that this is a check and not a pin
-    fn decide_pin_check(&mut self, position: &Position, pinner: Square, target: Square) {
-        // including is for overlapping with both target and pinner square
-        // the target square is removed afterward
-        let mut pin_liberties: BitBoard = square_mask_between(pinner, target);
-
-        // get the pinned piece should be reduced to a single square or empty
-        let pinned: BitBoard = pin_liberties & position[position.side_to_move];
-        if pinned != BBWrapper::empty() {
-            let pinned = Square::from(BBWrapper(pinned));
-            self.push_pinned(pinned, pin_liberties.add_square(pinner));
-        } else if pin_liberties & position.occupied_squares() == BBWrapper::empty() {
-            self.push_checker(pinner);
-        }
-    }
-
-    fn compute_pinned_pieces(&mut self, pos: &Position, piece: Piece, xray_function: XrayFunction) {
-        let king_square = pos.king_square(pos.side_to_move);
-        let opponent_color = !pos.side_to_move;
-
-        for piece_square in BBWrapper((pos[piece] | pos[Piece::QUEEN]) & pos[opponent_color]) {
-            let xray_attack = xray_function(piece_square, pos.occupied_squares());
-            if xray_attack.has_square(king_square) {
-                self.decide_pin_check(pos, piece_square, king_square);
-            }
-        }
-    }
-
-    // Compute only checks by knights and pawns as bishop, rooks and queens are already done by
-    // pinners computation
-    fn compute_pawn_knight_checkers(&mut self, pos: &Position) {
-        let opponent_color = !pos.side_to_move;
-
-        let king_square = pos.king_square(pos.side_to_move);
-
-        let opponent_pawns = pos[opponent_color] & pos[Piece::PAWN];
-        for pawn_square in BBWrapper(pawn_attack(king_square, pos.side_to_move) & opponent_pawns) {
-            self.push_checker(pawn_square)
-        }
-        let opponent_knights = pos[opponent_color] & pos[Piece::KNIGHT];
-        for knight_square in BBWrapper(knight_attack(king_square) & opponent_knights) {
-            self.push_checker(knight_square);
-        }
-    }
-
-    fn pinned_pieces_iterator(&self) -> PinnedPiecesIterator {
-        PinnedPiecesIterator {
-            move_gen: &self,
-            iteration_index: 0,
-        }
-    }
-}
-
+// Structures definition
 // A pseudo legal move list, illegal moves from absolutely pinned pieces are already removed
 // This does a legality check for en passant capture and king moves
 pub struct PseudoLegalGenerator<'a> {
@@ -299,7 +88,7 @@ impl<'a> LegalMoveList<'a> {
 impl<'a> Iterator for LegalMoveList<'a> {
     type Item = Move;
     fn next(&mut self) -> Option<Self::Item> {
-        self.move_gen.next().map_or(None, |mov| {
+        self.move_gen.next().and_then(|mov| {
             let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
             // If the move can't be illegal
             if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
@@ -361,7 +150,7 @@ where
 {
     type Item = (Move, G);
     fn next(&mut self) -> Option<Self::Item> {
-        self.move_gen.next().map_or(None, |mov| {
+        self.move_gen.next().and_then(|mov| {
             // If the move can be illegal we test it and cancel it if it is indeed illegal
             let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
             if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
@@ -751,7 +540,7 @@ impl Board {
 
         move_maker.fold(0, |acc, (mov, partial_sum)| {
             if depth == start_depth {
-                println!("{}: {}", Move::from(mov), partial_sum);
+                println!("{}: {}", mov, partial_sum);
             }
 
             acc + partial_sum
@@ -765,103 +554,3 @@ impl Board {
     }
 }
 
-fn generate_en_passant_table() -> BlackWhiteAttribute<[BitBoard; 8]> {
-    let mut white_en_passant_candidates = [BBWrapper::empty(); 8];
-    for square in BBWrapper(ROW_5) {
-        if square.file() != 0 {
-            white_en_passant_candidates[square.file() as usize].add_square(square.left());
-        }
-        if square.file() != 7 {
-            white_en_passant_candidates[square.file() as usize].add_square(square.right());
-        }
-    }
-
-    let black_en_passant_candidates =
-        array_init::array_init(|i| white_en_passant_candidates[i] >> 8);
-
-    BlackWhiteAttribute::new(black_en_passant_candidates, white_en_passant_candidates)
-}
-
-fn generate_pawn_attacks() -> BlackWhiteAttribute<AttackTable> {
-    let mut white_pawn_attacks = [BBWrapper::empty(); 64]; // First and last row while remain empty
-
-    for square in BBWrapper(SQUARES & !ROW_8) {
-        if !FILE_A.has_square(square) {
-            white_pawn_attacks[square as usize].add_square(square.forward_left());
-        }
-        if !FILE_H.has_square(square) {
-            white_pawn_attacks[square as usize].add_square(square.forward_right());
-        }
-    }
-
-    let mut black_pawn_attacks: [BitBoard; 64] =
-        array_init::array_init(|i| white_pawn_attacks[i] >> 16);
-    for square in BBWrapper(ROW_8) {
-        black_pawn_attacks[square as usize] =
-            black_pawn_attacks[square.forward(BLACK) as usize] << 8;
-    }
-
-    BlackWhiteAttribute::new(black_pawn_attacks, white_pawn_attacks)
-}
-
-fn generate_knight_attacks() -> AttackTable {
-    let mut knight_attacks = [BBWrapper::empty(); 64];
-
-    let knight_moves = [
-        (1, 2),
-        (1, -2),
-        (-1, 2),
-        (-1, -2),
-        (2, 1),
-        (2, -1),
-        (-2, 1),
-        (-2, -1),
-    ];
-
-    for (attack_bitboard, sq) in knight_attacks.iter_mut().zip(0u8..) {
-        let (rank, file) = sq.rank_file();
-        let (rank, file) = (rank as i8, file as i8);
-
-        for (i, j) in &knight_moves {
-            if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                attack_bitboard.add_square(SqWrapper::from_file_rank(
-                    (file + i) as u8,
-                    (rank + j) as u8,
-                ));
-            }
-        }
-    }
-
-    knight_attacks
-}
-
-fn generate_king_attacks() -> AttackTable {
-    let mut king_attacks = [BBWrapper::empty(); 64];
-
-    let king_moves = [
-        (1, 1),
-        (1, 0),
-        (1, -1),
-        (0, 1),
-        (0, -1),
-        (-1, 1),
-        (-1, 0),
-        (-1, -1),
-    ];
-
-    for (attack_bitboard, sq) in king_attacks.iter_mut().zip(0u8..) {
-        let (rank, file) = sq.rank_file();
-        let (rank, file) = (rank as i8, file as i8);
-
-        for (i, j) in &king_moves {
-            if file + i >= 0 && file + i < 8 && rank + j >= 0 && rank + j < 8 {
-                attack_bitboard.add_square(SqWrapper::from_file_rank(
-                    (file + i) as u8,
-                    (rank + j) as u8,
-                ));
-            }
-        }
-    }
-
-    king_attacks
-}

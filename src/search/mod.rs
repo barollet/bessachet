@@ -24,7 +24,7 @@ impl Board {
 
         // If check then all moves
         if is_king_checked {
-            for (mov, score) in move_maker {
+            for (_mov, score) in move_maker {
                 if score >= beta {
                     return beta;
                 }
@@ -33,7 +33,7 @@ impl Board {
                 }
             }
         } else {
-            for (mov, score) in move_maker.filter(|(mov, _s)| mov.is_capture()) {
+            for (_mov, score) in move_maker.filter(|(mov, _s)| mov.is_capture()) {
                 if score >= beta {
                     return beta;
                 }
@@ -58,6 +58,7 @@ impl Board {
         // Quiesce search to prevent from the horizon effect
         if depth_left == 0 {
             return self.quiesce(alpha, beta);
+            //return self.evaluation();
         }
 
         let mut best_mov = NULL_MOVE;

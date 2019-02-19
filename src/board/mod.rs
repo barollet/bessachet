@@ -274,7 +274,7 @@ impl Board {
         self.zobrist_hasher.update_side_to_move();
         self.position.side_to_move = opponent_color;
 
-        self.ply += 1;
+        //self.ply += 1;
 
         // Returns the decorated move
         mov.decorate(
@@ -350,6 +350,6 @@ impl Board {
         self.zobrist_hasher.update_side_to_move();
         self.position.side_to_move = played_color;
 
-        self.ply -= 1;
+        //self.ply -= 1;
     }
 }
