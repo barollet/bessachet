@@ -57,8 +57,8 @@ impl Board {
         }
         // Quiesce search to prevent from the horizon effect
         if depth_left == 0 {
-            return self.quiesce(alpha, beta);
-            //return self.evaluation();
+            //return self.quiesce(alpha, beta);
+            return self.evaluation();
         }
 
         let mut best_mov = NULL_MOVE;

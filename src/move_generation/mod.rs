@@ -30,8 +30,8 @@ mod magic_factors_tests;
 // See move_generation/init_magic.rs for impl block with initiatlization
 
 // Structures definition
-// A pseudo legal move list, illegal moves from absolutely pinned pieces are already removed
-// This does a legality check for en passant capture and king moves
+// A pseudo legal move generator, illegal moves from absolutely pinned pieces are already removed
+// Move ordering is performed at this step
 pub struct PseudoLegalGenerator<'a> {
     board: &'a Board,
     // NOTE: The maximum size is 128 even if we can construct a position with 218 moves
@@ -40,10 +40,25 @@ pub struct PseudoLegalGenerator<'a> {
     number_of_moves: usize,
 }
 
+// A list of pseudo legal moves on which we can iterate
 pub struct PseudoLegalMoveList {
     moves_list: [Move; 128],
     iterator_move: usize,
     number_of_moves: usize,
+}
+
+pub struct LegalMoveList<'a> {
+    board: &'a mut Board,
+    move_gen: PseudoLegalMoveList,
+}
+
+pub struct LegalMoveMakerWithWork<'a, F, G>
+where
+    F: FnMut(&mut Board) -> G,
+{
+    board: &'a mut Board,
+    move_gen: PseudoLegalMoveList,
+    intermediate_work: F,
 }
 
 impl<'a> From<&mut PseudoLegalGenerator<'a>> for PseudoLegalMoveList {
@@ -69,11 +84,6 @@ impl Iterator for PseudoLegalMoveList {
             None
         }
     }
-}
-
-pub struct LegalMoveList<'a> {
-    board: &'a mut Board,
-    move_gen: PseudoLegalMoveList,
 }
 
 impl<'a> LegalMoveList<'a> {
@@ -106,15 +116,6 @@ impl<'a> Iterator for LegalMoveList<'a> {
             }
         })
     }
-}
-
-pub struct LegalMoveMakerWithWork<'a, F, G>
-where
-    F: FnMut(&mut Board) -> G,
-{
-    board: &'a mut Board,
-    move_gen: PseudoLegalMoveList,
-    intermediate_work: F,
 }
 
 impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
@@ -235,7 +236,7 @@ impl Board {
             // If in double check we can only escape the king
             debug_assert_eq!(self.move_gen.number_of_checkers, 2);
             pseudo_legal_mov_gen.escape_king()
-        }
+        }.order_moves()
     }
 
     // Need a mutable reference to test pseudo legal moves
@@ -253,12 +254,29 @@ impl<'a> PseudoLegalGenerator<'a> {
         }
     }
 
-    fn escape_king(&mut self) -> PseudoLegalMoveList {
+    // TODO MVC/LVA
+    fn order_moves(&mut self) -> PseudoLegalMoveList {
+        let mut last_capture_index = 0;
+
+        for move_index in 0..self.number_of_moves {
+            if self.moves_list[move_index].is_capture() {
+                if move_index != last_capture_index {
+                    // push the move to the end of the capture moves
+                    self.moves_list.swap(move_index, last_capture_index);
+                }
+                last_capture_index += 1;
+            }
+        }
+
+        PseudoLegalMoveList::from(self)
+    }
+
+    fn escape_king(&mut self) -> &mut PseudoLegalGenerator<'a> {
         let player_color = self.board.position.side_to_move;
         let king_square = self.board.position.king_square(player_color);
         self.push_attack(king_square, king_attack(king_square));
 
-        PseudoLegalMoveList::from(self)
+        self
     }
 
     fn capture_and_block_checker(&mut self) -> &mut PseudoLegalGenerator<'a> {
@@ -279,7 +297,7 @@ impl<'a> PseudoLegalGenerator<'a> {
         self.all_moves_with_target(target_mask)
     }
 
-    fn all_moves(&mut self) -> PseudoLegalMoveList {
+    fn all_moves(&mut self) -> &mut PseudoLegalGenerator<'a> {
         self.all_moves_with_target(BBWrapper::full()).escape_king()
     }
 
