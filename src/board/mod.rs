@@ -60,7 +60,6 @@ pub struct Board {
 impl Board {
     // Returns a board representing a given position
     // Two halfboards and initial parameters
-    // NOTE: The position should be given from White pov
     pub fn init_from_position(position: Position, halfmove_clock: u8, ply: u8) -> Self {
         let mailbox_88 = MailBox88::initialize(&position);
         Board {

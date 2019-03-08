@@ -7,3 +7,4 @@ authors = ["Theo Barollet <theo.barollet@ensimag.fr>"]
 enum_primitive = "*"
 array-init = "0.0.4"
 lazy_static = "1.2.0"
+streaming-iterator = "0.1.4"

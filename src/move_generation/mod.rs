@@ -1,15 +1,17 @@
+pub mod checks_pins;
 pub mod init_magic;
 pub mod moves;
-pub mod checks_pins;
 mod piece_attacks;
 
-pub use self::moves::*;
 pub use self::checks_pins::*;
+pub use self::moves::*;
 pub use self::piece_attacks::*;
 use board::*;
 use std::convert::From;
 
 use types::*;
+
+use streaming_iterator::StreamingIterator;
 
 // Perft tests for move generation, see move_generation/perft_tests.rs
 #[cfg(test)]
@@ -23,15 +25,10 @@ mod magic_factors_tests;
 // through the possible_moves interface
 // TODO improve interface
 
-// Attack table for rooks, bishops and queens
-// this is a black magic fancy table with shared attacks
-// See: https://www.chessprogramming.org/Magic_Bitboards
-//
-// See move_generation/init_magic.rs for impl block with initiatlization
-
 // Structures definition
 // A pseudo legal move generator, illegal moves from absolutely pinned pieces are already removed
 // Move ordering is performed at this step
+// This is a Builder object.
 pub struct PseudoLegalGenerator<'a> {
     board: &'a Board,
     // NOTE: The maximum size is 128 even if we can construct a position with 218 moves
@@ -45,20 +42,6 @@ pub struct PseudoLegalMoveList {
     moves_list: [Move; 128],
     iterator_move: usize,
     number_of_moves: usize,
-}
-
-pub struct LegalMoveList<'a> {
-    board: &'a mut Board,
-    move_gen: PseudoLegalMoveList,
-}
-
-pub struct LegalMoveMakerWithWork<'a, F, G>
-where
-    F: FnMut(&mut Board) -> G,
-{
-    board: &'a mut Board,
-    move_gen: PseudoLegalMoveList,
-    intermediate_work: F,
 }
 
 impl<'a> From<&mut PseudoLegalGenerator<'a>> for PseudoLegalMoveList {
@@ -86,83 +69,49 @@ impl Iterator for PseudoLegalMoveList {
     }
 }
 
-impl<'a> LegalMoveList<'a> {
-    fn new(board: &'a mut Board) -> LegalMoveList<'a> {
-        LegalMoveList {
-            move_gen: board.generate_pseudo_legal_moves(),
-            board,
+pub struct LegalMoveMaker<'a> {
+    pseudo_legal_moves: PseudoLegalMoveList,
+    board: &'a mut Board,
+    ext_mov: Option<ExtendedMove>,
+}
+
+impl<'a> StreamingIterator for LegalMoveMaker<'a> {
+    type Item = ExtendedMove;
+    fn advance(&mut self) {
+        self.pseudo_legal_moves.next().map(|mov| {
+            self.ext_mov = self.board.legal_make(mov);
+        });
+    }
+    fn get(&self) -> Option<&Self::Item> {
+        self.ext_mov.as_ref()
+    }
+}
+
+impl<'a> Board {
+    pub fn move_maker(&'a mut self) -> LegalMoveMaker<'a> {
+        LegalMoveMaker {
+            pseudo_legal_moves: self.generate_pseudo_legal_moves(),
+            board: self,
+            ext_mov: None,
         }
     }
 }
 
-impl<'a> Iterator for LegalMoveList<'a> {
-    type Item = Move;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.move_gen.next().and_then(|mov| {
-            let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
+// A legal move iterator that doesn't make any moves on the board
+struct LegalMoveList {}
+
+impl LegalMoveList {
+    fn iter(board: &mut Board) -> impl Iterator<Item = Move> + '_ {
+        board.generate_pseudo_legal_moves().filter(move |mov| {
+            let is_king_mov = board[mov.origin_square()].unwrap() == Piece::KING;
             // If the move can't be illegal
             if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
-                Some(mov)
+                true
             } else {
-                // Otherwise we do a legality check and we unmake the move
-                // NOTE we cannot use map or or map_or_else
-                match self.board.legality_check(mov) {
-                    Some(ext_mov) => {
-                        self.board.unmake(ext_mov);
-                        Some(mov)
-                    }
-                    None => self.next(),
-                }
-            }
-        })
-    }
-}
-
-impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
-where
-    F: FnMut(&mut Board) -> G,
-{
-    pub fn new(board: &'a mut Board, intermediate_work: F) -> LegalMoveMakerWithWork<'a, F, G> {
-        LegalMoveMakerWithWork {
-            move_gen: board.generate_pseudo_legal_moves(),
-            board,
-            intermediate_work,
-        }
-    }
-}
-
-impl<'a, F, G> LegalMoveMakerWithWork<'a, F, G>
-where
-    F: FnMut(&mut Board) -> G,
-{
-    fn work_and_unmake(&mut self, ext_mov: ExtendedMove) -> G {
-        let intermediate_work = &mut self.intermediate_work;
-        let score = intermediate_work(self.board);
-
-        self.board.unmake(ext_mov);
-
-        score
-    }
-}
-
-impl<'a, F, G> Iterator for LegalMoveMakerWithWork<'a, F, G>
-where
-    F: FnMut(&mut Board) -> G,
-{
-    type Item = (Move, G);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.move_gen.next().and_then(|mov| {
-            // If the move can be illegal we test it and cancel it if it is indeed illegal
-            let is_king_mov = self.board[mov.origin_square()].unwrap() == Piece::KING;
-            if !mov.has_exact_flags(EN_PASSANT_CAPTURE_FLAG) && !is_king_mov {
-                let ext_mov = self.board.make(mov);
-
-                Some((mov, self.work_and_unmake(ext_mov)))
-            } else {
-                match self.board.legality_check(mov) {
-                    Some(ext_mov) => Some((mov, self.work_and_unmake(ext_mov))),
-                    None => self.next(),
-                }
+                board.legality_check(*mov).map_or(false, |ext_mov| {
+                    board.unmake(ext_mov);
+                    true
+                })
             }
         })
     }
@@ -184,6 +133,19 @@ impl Board {
         } else {
             // Legal
             Some(ext_mov)
+        }
+    }
+
+    // Choose if the move needs a legality check or can be made without further check
+    // If the given move is illagal, returns None
+    pub fn legal_make(&mut self, pseudo_legal_move: Move) -> Option<ExtendedMove> {
+        let is_king_mov = self[pseudo_legal_move.origin_square()].unwrap() == Piece::KING;
+        // The move can be illegal
+        if pseudo_legal_move.is_en_passant_capture() || is_king_mov {
+            self.legality_check(pseudo_legal_move)
+        // No further check needed
+        } else {
+            Some(self.make(pseudo_legal_move))
         }
     }
 
@@ -212,7 +174,7 @@ impl Board {
     pub fn is_king_checked(&self) -> bool {
         let player_color = self.position.side_to_move;
         let king_square = self.position.king_square(player_color);
-        self.is_in_check(king_square, !player_color)
+        self.is_in_check(king_square, player_color)
     }
 }
 
@@ -236,12 +198,13 @@ impl Board {
             // If in double check we can only escape the king
             debug_assert_eq!(self.move_gen.number_of_checkers, 2);
             pseudo_legal_mov_gen.escape_king()
-        }.order_moves()
+        }
+        .order_moves()
     }
 
     // Need a mutable reference to test pseudo legal moves
     fn number_of_legal_moves(&mut self) -> usize {
-        LegalMoveList::new(self).count()
+        LegalMoveList::iter(self).count()
     }
 }
 
@@ -532,17 +495,17 @@ impl Board {
         let origin_square = SqWrapper::from_char_file_rank(origin_file, origin_row);
         let dest_square = SqWrapper::from_char_file_rank(dest_file, dest_row);
 
-        LegalMoveList::new(self)
-            .find(|mov| {
-                mov.origin_square() == origin_square && mov.destination_square() == dest_square
-            })
+        let played_move = LegalMoveList::iter(self).find(|mov| {
+            mov.origin_square() == origin_square && mov.destination_square() == dest_square
+        });
+        played_move
             .map(|mov| self.make(mov))
             .unwrap_or_else(|| panic!("Move not found {}", Move::new(origin_square, dest_square),));
     }
 
     #[allow(dead_code)]
     pub fn print_possible_moves(&mut self) {
-        for mov in LegalMoveList::new(self) {
+        for mov in LegalMoveList::iter(self) {
             println!("{}", mov);
         }
     }
@@ -553,16 +516,21 @@ impl Board {
             return self.number_of_legal_moves();
         }
 
-        let move_maker =
-            LegalMoveMakerWithWork::new(self, |board| board.internal_perft(depth - 1, start_depth));
+        self.generate_pseudo_legal_moves()
+            .fold(0, |acc, pseudo_legal_move| {
+                match self.legal_make(pseudo_legal_move) {
+                    Some(ext_mov) => {
+                        let partial_sum = self.internal_perft(depth - 1, start_depth);
+                        self.unmake(ext_mov);
+                        if depth == start_depth {
+                            println!("{}: {}", Move::from(ext_mov), partial_sum);
+                        }
 
-        move_maker.fold(0, |acc, (mov, partial_sum)| {
-            if depth == start_depth {
-                println!("{}: {}", mov, partial_sum);
-            }
-
-            acc + partial_sum
-        })
+                        acc + partial_sum
+                    }
+                    None => acc,
+                }
+            })
     }
 
     // Runs a perft test of the given depth on the given board
@@ -571,4 +539,3 @@ impl Board {
         self.internal_perft(depth, depth)
     }
 }
-

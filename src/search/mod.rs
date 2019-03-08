@@ -16,33 +16,32 @@ impl Board {
             alpha = stand_pat;
         }
 
-        let is_king_checked = self.is_king_checked();
-
-        let move_maker = LegalMoveMakerWithWork::new(self, move |board| {
-            -board.quiesce(-beta, -alpha)
-        });
+        macro_rules! quiesce_loop_body {
+            ($mov: ident) => {
+                if let Some(ext_move) = self.legal_make($mov) {
+                    let score = -self.quiesce(-beta, -alpha);
+                    self.unmake(ext_move);
+                    if score >= beta {
+                        return beta;
+                    }
+                    if score > alpha {
+                        alpha = score;
+                    }
+                }
+            };
+        }
 
         // If check then all moves
-        if is_king_checked {
-            for (_mov, score) in move_maker {
-                if score >= beta {
-                    return beta;
-                }
-                if score > alpha {
-                    alpha = score;
-                }
+        let moves = self.generate_pseudo_legal_moves();
+        if self.is_king_checked() {
+            for mov in moves {
+                quiesce_loop_body!(mov);
             }
         } else {
-            for (_mov, score) in move_maker.filter(|(mov, _s)| mov.is_capture()) {
-                if score >= beta {
-                    return beta;
-                }
-                if score > alpha {
-                    alpha = score;
-                }
+            for mov in moves.filter(|mov| mov.is_capture()) {
+                quiesce_loop_body!(mov);
             }
         };
-
         alpha
     }
 
@@ -57,37 +56,38 @@ impl Board {
         }
         // Quiesce search to prevent from the horizon effect
         if depth_left == 0 {
-            //return self.quiesce(alpha, beta);
-            return self.evaluation();
+            return self.quiesce(alpha, beta);
+            //return self.evaluation();
         }
 
         let mut best_mov = NULL_MOVE;
         let mut max_score = f32::NEG_INFINITY;
         let mut node_type = NodeType::AllNode;
 
-        let move_maker = LegalMoveMakerWithWork::new(self, move |board| {
-            -board.alpha_beta(-beta, -alpha, depth_left - 1)
-        });
-        for (mov, score) in move_maker {
-            if score > max_score {
-                max_score = score;
-                best_mov = mov;
-            }
+        for mov in self.generate_pseudo_legal_moves() {
+            if let Some(ext_move) = self.legal_make(mov) {
+                let score = -self.alpha_beta(-beta, -alpha, depth_left - 1);
+                self.unmake(ext_move);
+                if score > max_score {
+                    max_score = score;
+                    best_mov = mov;
+                }
 
-            if score >= beta {
-                // Write result in TT
-                TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
-                    key,
-                    mov, // Refutation move
-                    depth_left,
-                    score,
-                    NodeType::CutNode,
-                ));
-                return beta;
-            }
-            if score > alpha {
-                node_type = NodeType::PVNode;
-                alpha = score;
+                if score >= beta {
+                    // Write result in TT
+                    TRANSPOSITION_TABLE.try_insert(&TTReadableEntry::new(
+                        key,
+                        mov, // Refutation move
+                        depth_left,
+                        score,
+                        NodeType::CutNode,
+                    ));
+                    return beta;
+                }
+                if score > alpha {
+                    node_type = NodeType::PVNode;
+                    alpha = score;
+                }
             }
         }
 
