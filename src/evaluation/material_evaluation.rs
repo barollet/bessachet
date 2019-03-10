@@ -1,5 +1,4 @@
 use board::*;
-use evaluation::side_multiplier;
 use std::ops::{Index, IndexMut};
 use types::*;
 
@@ -9,8 +8,7 @@ use types::*;
 // TODO change this to fixed point values to add minor advantages
 //  2*243*nWR - (2*243-81)*nBR + (243+27+9)*nWB - (243+27)*nBB + (243+3)*nWN - (243+1)*nBN + 729*nWQ + 1458*nBQ + 2916*nWP + 26244*nBP
 //  constant offset to avoid negative index: 1838
-//const MATERIAL_TABLE_SIZE: usize = 237_490;
-const MATERIAL_TABLE_SIZE: usize = 239_327;
+const MATERIAL_TABLE_SIZE: usize = 239_328;
 lazy_static! {
     static ref MATERIAL_TABLE: [i8; MATERIAL_TABLE_SIZE] = pre_compute_material_table();
 }
@@ -26,7 +24,7 @@ const PIECE_MATERIAL_VALUES: [i8; 6] = [
 
 #[derive(Copy, Clone)]
 pub struct MaterialEvaluator {
-    table_index: isize, // NOTE: This should never be negative
+    pub table_index: isize, // NOTE: This should never be negative
 
     populations: PieceColorOffsets,
     valid_index: bool, // TODO make this valid again after an invalid index
@@ -56,36 +54,34 @@ fn pre_compute_material_table() -> [i8; MATERIAL_TABLE_SIZE] {
     let mut material_table = [0; MATERIAL_TABLE_SIZE];
     let mut material_evaluator = MaterialEvaluator::initialize(&Position::empty_board());
 
-    macro_rules! for_piece {
-        ($piece:expr, $max_number:expr, $body:expr) => {
+    macro_rules! for_pieces {
+        () => {
+            material_table[material_evaluator.table_index as usize] =
+                material_value(&material_evaluator.populations);
+        };
+        (($piece: expr, $max_number: expr), $($tail:tt)*) => {
             for _i in 0..=$max_number {
-                material_evaluator.uncapture_piece($piece, WHITE);
                 for _i in 0..=$max_number {
+                    for_pieces!($($tail)*);
                     material_evaluator.uncapture_piece($piece, BLACK);
-                    $body;
+                }
+                for _i in 0..=$max_number {
                     material_evaluator.capture_piece($piece, BLACK);
                 }
+                material_evaluator.uncapture_piece($piece, WHITE);
+            }
+            for _i in 0..=$max_number {
                 material_evaluator.capture_piece($piece, WHITE);
             }
         };
     }
 
-    macro_rules! unnest_for_calls {
-        (($piece: expr, $max_number: expr)) => {
-            for_piece!($piece, $max_number, material_table[material_evaluator.table_index as usize] =
-                        material_value(&material_evaluator.populations))
-        };
-        (($piece: expr, $max_number: expr), $($others:tt)*) => {
-            for_piece!($piece, $max_number, unnest_for_calls!($($others)*));
-        };
-    }
-
-    unnest_for_calls!(
+    for_pieces!(
         (Piece::ROOK, 2),
         (Piece::BISHOP, 2),
         (Piece::KNIGHT, 2),
         (Piece::QUEEN, 1),
-        (Piece::PAWN, 8)
+        (Piece::PAWN, 8),
     );
 
     material_table
@@ -111,42 +107,6 @@ fn material_value(piece_populations: &PieceColorOffsets) -> i8 {
 #[derive(Copy, Clone)]
 struct PieceColorOffsets([[isize; 5]; 2]);
 type PieceColorPair = (Piece, Color);
-
-impl Index<PieceColorPair> for PieceColorOffsets {
-    type Output = isize;
-
-    fn index(&self, (piece, color): PieceColorPair) -> &isize {
-        &self.0[color as usize][piece as usize]
-    }
-}
-
-impl Index<Color> for PieceColorOffsets {
-    type Output = [isize; 5];
-
-    fn index(&self, color: Color) -> &[isize; 5] {
-        &self.0[color as usize]
-    }
-}
-
-impl IndexMut<PieceColorPair> for PieceColorOffsets {
-    fn index_mut(&mut self, (piece, color): PieceColorPair) -> &mut isize {
-        &mut self.0[color as usize][piece as usize]
-    }
-}
-
-impl Index<PieceColorPair> for MaterialEvaluator {
-    type Output = isize;
-
-    fn index(&self, (piece, color): PieceColorPair) -> &isize {
-        &self.populations[(piece, color)]
-    }
-}
-
-impl IndexMut<PieceColorPair> for MaterialEvaluator {
-    fn index_mut(&mut self, (piece, color): PieceColorPair) -> &mut isize {
-        &mut self.populations[(piece, color)]
-    }
-}
 
 impl<'a> AuxiliaryStruct<'a> for MaterialEvaluator {
     type Source = &'a Position;
@@ -210,22 +170,57 @@ impl<'a> AuxiliaryStruct<'a> for MaterialEvaluator {
 impl MaterialEvaluator {
     // We update the material index on capture or promotion
     pub fn capture_piece(&mut self, captured_piece: Piece, color: Color) {
-        self.populations[(captured_piece, color)] -= 1;
+        self[(captured_piece, color)] -= 1;
         self.table_index -= INDEX_OFFSETS[(captured_piece, color)];
     }
 
     pub fn uncapture_piece(&mut self, captured_piece: Piece, color: Color) {
-        self.populations[(captured_piece, color)] += 1;
+        self[(captured_piece, color)] += 1;
         self.table_index += INDEX_OFFSETS[(captured_piece, color)];
     }
 
-    pub fn evaluation(&self, side_to_move: Color) -> f32 {
-        let side_multiplier = side_multiplier(side_to_move);
+    pub fn evaluation(&self) -> f32 {
         if self.valid_index {
-            side_multiplier * f32::from(MATERIAL_TABLE[self.table_index as usize])
+            f32::from(MATERIAL_TABLE[self.table_index as usize])
         } else {
             // If the index is not a common constellation, we compute everything by hand
-            side_multiplier * f32::from(material_value(&self.populations))
+            f32::from(material_value(&self.populations))
         }
+    }
+}
+
+impl Index<PieceColorPair> for PieceColorOffsets {
+    type Output = isize;
+
+    fn index(&self, (piece, color): PieceColorPair) -> &isize {
+        &self.0[color as usize][piece as usize]
+    }
+}
+
+impl Index<Color> for PieceColorOffsets {
+    type Output = [isize; 5];
+
+    fn index(&self, color: Color) -> &[isize; 5] {
+        &self.0[color as usize]
+    }
+}
+
+impl IndexMut<PieceColorPair> for PieceColorOffsets {
+    fn index_mut(&mut self, (piece, color): PieceColorPair) -> &mut isize {
+        &mut self.0[color as usize][piece as usize]
+    }
+}
+
+impl Index<PieceColorPair> for MaterialEvaluator {
+    type Output = isize;
+
+    fn index(&self, (piece, color): PieceColorPair) -> &isize {
+        &self.populations[(piece, color)]
+    }
+}
+
+impl IndexMut<PieceColorPair> for MaterialEvaluator {
+    fn index_mut(&mut self, (piece, color): PieceColorPair) -> &mut isize {
+        &mut self.populations[(piece, color)]
     }
 }

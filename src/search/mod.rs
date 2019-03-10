@@ -31,8 +31,9 @@ impl Board {
             };
         }
 
-        // If check then all moves
         let moves = self.generate_pseudo_legal_moves();
+        // If check then all moves
+        /*
         if self.is_king_checked() {
             for mov in moves {
                 quiesce_loop_body!(mov);
@@ -42,6 +43,10 @@ impl Board {
                 quiesce_loop_body!(mov);
             }
         };
+        */
+        for mov in moves.filter(|mov| mov.is_capture()) {
+            quiesce_loop_body!(mov);
+        }
         alpha
     }
 
@@ -56,8 +61,8 @@ impl Board {
         }
         // Quiesce search to prevent from the horizon effect
         if depth_left == 0 {
-            return self.quiesce(alpha, beta);
-            //return self.evaluation();
+            //return self.quiesce(alpha, beta);
+            return self.evaluation();
         }
 
         let mut best_mov = NULL_MOVE;

@@ -4,8 +4,6 @@ use hash_tables::*;
 
 use types::*;
 
-use evaluation::side_multiplier;
-
 // Indexed by file and return adjacent files
 const ISOLATION_MASK: [(BitBoard, BitBoard); 6] = [
     (file(0) | file(2), file(1)),
@@ -30,10 +28,9 @@ const BACKWARD_MASK: [(BitBoard, BitBoard); 8] = [
 impl Board {
     pub fn pawn_structure_evaluation(&self) -> f32 {
         let key = self.zobrist_hasher.zobrist_pawn_key;
-        let side_multiplier = side_multiplier(self.position.side_to_move);
         if let Some(pawn_entry) = unsafe { PAWN_TABLE.probe(key) } {
             // Table hit
-            side_multiplier * f32::from(pawn_entry.evaluation)
+            f32::from(pawn_entry.evaluation)
         } else {
             // Table miss, we compute the entry and try to insert it
             let pawn_evaluation = self.doubled_pawns_score()
@@ -44,7 +41,7 @@ impl Board {
                 PAWN_TABLE.try_insert(PawnTableEntry::new(key, pawn_evaluation));
             }
 
-            side_multiplier * pawn_evaluation
+            pawn_evaluation
         }
     }
 

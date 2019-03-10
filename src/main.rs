@@ -1,19 +1,3 @@
-/*!
-    # Docs
-
-    This is a project to test out `rustdoc`.
-
-    [Here is a link!](https://www.rust-lang.org)
-
-    ## Subheading
-
-    ```rust
-    fn foo() -> i32 {
-        1 + 1
-    }
-    ```
-*/
-
 #[macro_use]
 extern crate enum_primitive;
 #[macro_use]
@@ -42,10 +26,11 @@ fn main() {
         Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
             .unwrap();
 
-    board.search(5);
+    board.search(7);
     while let Some(tt_entry) = TRANSPOSITION_TABLE.probe(board.zobrist_hasher.zobrist_key) {
         println!("{}", tt_entry.best_move);
         board.make(tt_entry.best_move);
-        println!("value: {}", board.material_evaluator.evaluation(WHITE));
+        println!("value: {}", tt_entry.score);
+        println!("eval: {}", board.evaluation());
     }
 }
