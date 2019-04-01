@@ -17,9 +17,9 @@ use board::*;
 // Move structure
 // prom | capt | sp1 | sp0 | dst5 .. dst0 | st5 .. st0
 //  15  |  14  |  13 | 12  |  11  ..  6   |  5  ..  0
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Move(u16);
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtendedMove(u64);
 
 const SPECIAL0_FLAG: u16 = 1 << 12;

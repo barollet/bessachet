@@ -8,10 +8,9 @@ pub use self::moves::*;
 pub use self::piece_attacks::*;
 use board::*;
 use std::convert::From;
+use std::ops::{Index, IndexMut};
 
 use types::*;
-
-use streaming_iterator::StreamingIterator;
 
 // Perft tests for move generation, see move_generation/perft_tests.rs
 #[cfg(test)]
@@ -31,6 +30,7 @@ mod magic_factors_tests;
 // This is a Builder object.
 pub struct PseudoLegalGenerator<'a> {
     board: &'a Board,
+    helper: MoveGenHelper,
     // NOTE: The maximum size is 128 even if we can construct a position with 218 moves
     // maybe we have to change this to 218 or a dynamically sized struct
     moves_list: [Move; 128],
@@ -39,13 +39,23 @@ pub struct PseudoLegalGenerator<'a> {
 
 // A list of pseudo legal moves on which we can iterate
 pub struct PseudoLegalMoveList {
-    moves_list: [Move; 128],
+    pub moves_list: [Move; 128],
     iterator_move: usize,
-    number_of_moves: usize,
+    pub number_of_moves: usize,
 }
 
-impl<'a> From<&mut PseudoLegalGenerator<'a>> for PseudoLegalMoveList {
-    fn from(generator: &mut PseudoLegalGenerator) -> PseudoLegalMoveList {
+impl std::default::Default for PseudoLegalMoveList {
+    fn default() -> Self {
+        PseudoLegalMoveList {
+            moves_list: [NULL_MOVE; 128],
+            iterator_move: 0,
+            number_of_moves: 0,
+        }
+    }
+}
+
+impl<'a> From<PseudoLegalGenerator<'a>> for PseudoLegalMoveList {
+    fn from(generator: PseudoLegalGenerator) -> PseudoLegalMoveList {
         PseudoLegalMoveList {
             moves_list: generator.moves_list,
             number_of_moves: generator.number_of_moves,
@@ -75,18 +85,6 @@ pub struct LegalMoveMaker<'a> {
     ext_mov: Option<ExtendedMove>,
 }
 
-impl<'a> StreamingIterator for LegalMoveMaker<'a> {
-    type Item = ExtendedMove;
-    fn advance(&mut self) {
-        self.pseudo_legal_moves.next().map(|mov| {
-            self.ext_mov = self.board.legal_make(mov);
-        });
-    }
-    fn get(&self) -> Option<&Self::Item> {
-        self.ext_mov.as_ref()
-    }
-}
-
 impl<'a> Board {
     pub fn move_maker(&'a mut self) -> LegalMoveMaker<'a> {
         LegalMoveMaker {
@@ -114,6 +112,19 @@ impl LegalMoveList {
                 })
             }
         })
+    }
+}
+
+impl Index<usize> for PseudoLegalMoveList {
+    type Output = Move;
+    fn index(&self, index: usize) -> &Move {
+        &self.moves_list[index]
+    }
+}
+
+impl IndexMut<usize> for PseudoLegalMoveList {
+    fn index_mut(&mut self, index: usize) -> &mut Move {
+        &mut self.moves_list[index]
     }
 }
 
@@ -180,26 +191,22 @@ impl Board {
 
 // Move generation functions
 impl Board {
-    pub fn generate_pseudo_legal_moves(&mut self) -> PseudoLegalMoveList {
+    pub fn generate_pseudo_legal_moves(&self) -> PseudoLegalMoveList {
         // We update the checks and pins on demand
-        self.move_gen = MoveGenHelper::initialize(&self.position);
-
-        let mut pseudo_legal_mov_gen = PseudoLegalGenerator::new(&self);
+        let mut move_gen = PseudoLegalGenerator::new(&self);
 
         // If not in check, we fetch the move as usual
-        if self.move_gen.number_of_checkers == 0 {
-            pseudo_legal_mov_gen.all_moves()
-        } else if self.move_gen.number_of_checkers == 1 {
+        if move_gen.helper.number_of_checkers == 0 {
+            move_gen.all_moves();
+        } else if move_gen.helper.number_of_checkers == 1 {
             // If in simple check we can block the slider, capture the checker or escape the king
-            pseudo_legal_mov_gen
-                .capture_and_block_checker()
-                .escape_king()
+            move_gen.capture_and_block_checker().escape_king();
         } else {
             // If in double check we can only escape the king
-            debug_assert_eq!(self.move_gen.number_of_checkers, 2);
-            pseudo_legal_mov_gen.escape_king()
+            debug_assert_eq!(move_gen.helper.number_of_checkers, 2);
+            move_gen.escape_king();
         }
-        .order_moves()
+        PseudoLegalMoveList::from(move_gen)
     }
 
     // Need a mutable reference to test pseudo legal moves
@@ -212,26 +219,10 @@ impl<'a> PseudoLegalGenerator<'a> {
     fn new(board: &Board) -> PseudoLegalGenerator {
         PseudoLegalGenerator {
             board,
+            helper: MoveGenHelper::new(&board.position),
             moves_list: [NULL_MOVE; 128],
             number_of_moves: 0,
         }
-    }
-
-    // TODO MVC/LVA
-    fn order_moves(&mut self) -> PseudoLegalMoveList {
-        let mut last_capture_index = 0;
-
-        for move_index in 0..self.number_of_moves {
-            if self.moves_list[move_index].is_capture() {
-                if move_index != last_capture_index {
-                    // push the move to the end of the capture moves
-                    self.moves_list.swap(move_index, last_capture_index);
-                }
-                last_capture_index += 1;
-            }
-        }
-
-        PseudoLegalMoveList::from(self)
     }
 
     fn escape_king(&mut self) -> &mut PseudoLegalGenerator<'a> {
@@ -243,7 +234,7 @@ impl<'a> PseudoLegalGenerator<'a> {
     }
 
     fn capture_and_block_checker(&mut self) -> &mut PseudoLegalGenerator<'a> {
-        let checker_square = self.board.move_gen.checkers[0];
+        let checker_square = self.helper.checkers[0];
         let checker_piece = self.board[checker_square].unwrap();
 
         let mut target_mask: BitBoard = BitBoard::from(SqWrapper(checker_square));
@@ -270,7 +261,7 @@ impl<'a> PseudoLegalGenerator<'a> {
         let player_pieces = self.board.position[player_color];
         let opponent_pieces = self.board.position[!player_color];
 
-        let free_pieces = self.board.move_gen.free_pieces;
+        let free_pieces = self.helper.free_pieces;
         let empty_squares = self.board.position.empty_squares();
 
         // Pawns
@@ -319,7 +310,7 @@ impl<'a> PseudoLegalGenerator<'a> {
             ($piece: expr, $attack_function: ident) => {
                 let pieces = player_pieces
                     & (self.board.position[$piece] | self.board.position[Piece::QUEEN])
-                    & self.board.move_gen.free_pieces;
+                    & self.helper.free_pieces;
                 for piece in BBWrapper(pieces) {
                     self.push_attack(
                         piece,
@@ -335,7 +326,7 @@ impl<'a> PseudoLegalGenerator<'a> {
         sliding_attack!(Piece::ROOK, rook_attack);
 
         // Pinned pieces
-        let pinned_pieces = self.board.move_gen.pinned_pieces_iterator();
+        let pinned_pieces = self.helper.pinned_pieces_iterator();
         for (square, liberties) in pinned_pieces {
             let occupied_squares = self.board.position.occupied_squares();
             match self.board[square].unwrap() {

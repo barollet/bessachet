@@ -7,12 +7,6 @@ use types::*;
 
 pub type MailBox88 = [Option<Piece>; 64];
 
-// A trait for Board auxiliary structs like move generation, evaluator and hashers
-pub trait AuxiliaryStruct<'a> {
-    type Source;
-    fn initialize(Self::Source) -> Self;
-}
-
 // Castling type enum for indexing
 #[derive(Debug, Clone, Copy)]
 pub enum CastlingSide {
@@ -109,19 +103,15 @@ pub const ROOK_SQUARES: [[BlackWhiteAttribute<Square>; 2]; 2] = [
     ],
 ];
 
-impl<'a> AuxiliaryStruct<'a> for MailBox88 {
-    type Source = &'a Position;
-
-    fn initialize(position: Self::Source) -> Self {
-        let mut mailbox = [None; 64];
-        for piece in &PIECES_LIST {
-            for square in BBWrapper(position.pieces[*piece as usize]) {
-                mailbox[square as usize] = Some(*piece);
-            }
+pub fn initialize_mailbox_88(position: &Position) -> MailBox88 {
+    let mut mailbox = [None; 64];
+    for piece in &PIECES_LIST {
+        for square in BBWrapper(position.pieces[*piece as usize]) {
+            mailbox[square as usize] = Some(*piece);
         }
-
-        mailbox
     }
+
+    mailbox
 }
 
 impl Position {

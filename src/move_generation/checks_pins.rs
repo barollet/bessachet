@@ -1,6 +1,6 @@
+use board::*;
 use move_generation::piece_attacks::*;
 use types::*;
-use board::*;
 /*
  * The MoveGenHelper is updated before move generation and takes care of computing
  * pinned pieces with there liberties and checking pieces
@@ -20,9 +20,8 @@ pub struct MoveGenHelper {
     pub number_of_checkers: usize,
 }
 
-impl<'a> AuxiliaryStruct<'a> for MoveGenHelper {
-    type Source = &'a Position;
-    fn initialize(position: Self::Source) -> Self {
+impl MoveGenHelper {
+    pub fn new(position: &Position) -> Self {
         let mut mgh = MoveGenHelper {
             pinned_pieces: [(0, 0); 8],
             number_of_pinned_pieces: 0,
@@ -38,25 +37,6 @@ impl<'a> AuxiliaryStruct<'a> for MoveGenHelper {
         mgh.compute_pawn_knight_checkers(&position);
 
         mgh
-    }
-}
-
-pub struct PinnedPiecesIterator<'a> {
-    move_gen: &'a MoveGenHelper,
-    iteration_index: usize,
-}
-
-// This iterates over the pinned pieces
-impl<'a> Iterator for PinnedPiecesIterator<'a> {
-    type Item = (Square, BitBoard);
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.iteration_index < self.move_gen.number_of_pinned_pieces {
-            let item = self.move_gen.pinned_pieces[self.iteration_index];
-            self.iteration_index += 1;
-            Some(item)
-        } else {
-            None
-        }
     }
 }
 
@@ -124,8 +104,29 @@ impl MoveGenHelper {
 
     pub fn pinned_pieces_iterator(&self) -> PinnedPiecesIterator {
         PinnedPiecesIterator {
-            move_gen: &self,
+            pinned_pieces: self.pinned_pieces,
+            number_of_pinned_pieces: self.number_of_pinned_pieces,
             iteration_index: 0,
+        }
+    }
+}
+
+pub struct PinnedPiecesIterator {
+    pinned_pieces: [(Square, BitBoard); 8],
+    number_of_pinned_pieces: usize,
+    iteration_index: usize,
+}
+
+// This iterates over the pinned pieces
+impl Iterator for PinnedPiecesIterator {
+    type Item = (Square, BitBoard);
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.iteration_index < self.number_of_pinned_pieces {
+            let item = self.pinned_pieces[self.iteration_index];
+            self.iteration_index += 1;
+            Some(item)
+        } else {
+            None
         }
     }
 }

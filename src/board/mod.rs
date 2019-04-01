@@ -2,14 +2,15 @@ use types::*;
 
 use move_generation::*;
 
-use evaluation::MaterialEvaluator;
-use hash_tables::utils::*;
-
 pub mod fen;
 pub mod utils;
 
 // Exports the prelude
 pub use self::utils::*;
+
+use search::GameNode;
+
+use std::rc::Rc;
 
 // The board is represented as a set of bitboards
 // See: https://www.chessprogramming.org/Bitboards
@@ -41,15 +42,13 @@ pub struct Board {
     // square
     pub mailbox_88: [Option<Piece>; 64],
 
-    // Auxiliary structs for hashing, generating moves and evaluating material
-    pub move_gen: MoveGenHelper,
-    pub zobrist_hasher: ZobristHasher,
-    pub material_evaluator: MaterialEvaluator,
-
     // Internal capture stack for making and unmaking moves
     // Pawns captured en passant are not here (there is the code in the move encoding for en passant)
     capture_stack: [Piece; 32],
     capture_stack_size: usize,
+
+    // Game tree
+    pub game_tree_node: Rc<GameNode>,
 
     // Misc
     halfmove_clock: u8,
@@ -61,22 +60,23 @@ impl Board {
     // Returns a board representing a given position
     // Two halfboards and initial parameters
     pub fn init_from_position(position: Position, halfmove_clock: u8, ply: u8) -> Self {
-        let mailbox_88 = MailBox88::initialize(&position);
-        Board {
-            mailbox_88,
-
-            move_gen: MoveGenHelper::initialize(&position),
-            zobrist_hasher: ZobristHasher::initialize((&position, &mailbox_88)),
-            material_evaluator: MaterialEvaluator::initialize(&position),
+        let mut board = Board {
+            mailbox_88: initialize_mailbox_88(&position),
 
             position, // We move the position once we initialized everything
 
             capture_stack: [Piece::PAWN; 32], // We could let it uninitialized
             capture_stack_size: 0,
 
+            // An uninitialized game node
+            game_tree_node: Rc::new(GameNode::default()),
+
             halfmove_clock,
             ply,
-        }
+        };
+        board.game_tree_node = Rc::new(GameNode::new(&board));
+
+        board
     }
 
     pub fn initial_position() -> Self {
@@ -107,47 +107,23 @@ impl Position {
 // Board internal manipulation
 impl Board {
     // Piece manipulation
-    // TODO check that we dont promote too much queens
-    fn create_piece_internal(&mut self, square: Square, piece: Piece, color: Color) {
+    fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
         let set_mask = BitBoard::from(SqWrapper(square));
         self.position[piece] |= set_mask;
         self.position[color] |= set_mask;
         self[square] = Some(piece);
-
-        self.zobrist_hasher.update_capture(square, piece, color);
-
-        // Updating the pawn hash table index
-        if piece == Piece::PAWN {
-            self.zobrist_hasher.update_pawn_capture(square, color);
-        }
     }
 
-    fn create_piece(&mut self, square: Square, piece: Piece, color: Color) {
-        self.create_piece_internal(square, piece, color);
-        self.material_evaluator.uncapture_piece(piece, color);
-    }
-
-    fn delete_piece_internal(&mut self, square: Square, piece: Piece, color: Color) {
+    fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
         let reset_mask = !BitBoard::from(SqWrapper(square));
         self.position[piece] &= reset_mask;
         self.position[color] &= reset_mask;
         self[square] = None;
-
-        self.zobrist_hasher.update_capture(square, piece, color);
-        // Updating the pawn hash table index
-        if piece == Piece::PAWN {
-            self.zobrist_hasher.update_pawn_capture(square, color);
-        }
-    }
-
-    fn delete_piece(&mut self, square: Square, piece: Piece, color: Color) {
-        self.delete_piece_internal(square, piece, color);
-        self.material_evaluator.capture_piece(piece, color);
     }
 
     fn move_piece(&mut self, from: Square, to: Square, piece: Piece, color: Color) {
-        self.delete_piece_internal(from, piece, color);
-        self.create_piece_internal(to, piece, color);
+        self.delete_piece(from, piece, color);
+        self.create_piece(to, piece, color);
     }
 
     // Capture stack manipulation
@@ -235,9 +211,6 @@ impl Board {
 
         // Double pawn push, set the en passant target
         self.position.en_passant = mov.get_en_passant_target_square();
-        let new_en_passant_square = self.position.en_passant;
-        self.zobrist_hasher
-            .update_en_passant(old_en_passant_square, new_en_passant_square);
 
         // Promotion
         if let Some(promotion_piece) = mov.get_promotion_piece() {
@@ -265,12 +238,7 @@ impl Board {
             }
         }
 
-        let new_castling_rights = self.position.castling_rights;
-        self.zobrist_hasher
-            .update_castling_rights(old_caslting_rights, new_castling_rights);
-
         // Update the side to move
-        self.zobrist_hasher.update_side_to_move();
         self.position.side_to_move = opponent_color;
 
         //self.ply += 1;
@@ -320,14 +288,8 @@ impl Board {
             self.create_piece(mov.origin_square(), Piece::PAWN, played_color);
         }
 
-        // Restoring en passant, caslting rights and halfmove clock from the move metadata
-        // En passant restoration
-        let en_passant_square_to_remove = self.position.en_passant;
-
         self.position.en_passant = ext_mov.get_en_passant_target();
         let new_en_passant_square = self.position.en_passant;
-        self.zobrist_hasher
-            .update_en_passant(en_passant_square_to_remove, new_en_passant_square);
 
         // We restore en passant capture after en passant restoration
         if mov.is_en_passant_capture() {
@@ -336,17 +298,12 @@ impl Board {
         }
 
         // Castling rights restoration
-        let old_caslting_rights = self.position.castling_rights;
         let restored_castling_rights = ext_mov.get_castling_rights();
         self.position.castling_rights = restored_castling_rights;
-
-        self.zobrist_hasher
-            .update_castling_rights(old_caslting_rights, restored_castling_rights);
 
         // Halfmove clock restoration
         self.halfmove_clock = ext_mov.get_halfmove_clock();
 
-        self.zobrist_hasher.update_side_to_move();
         self.position.side_to_move = played_color;
 
         //self.ply -= 1;
